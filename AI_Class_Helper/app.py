@@ -3,20 +3,19 @@ import google.generativeai as genai
 import tempfile
 import os
 
-# --- 1. 頁面基礎設定 (讓網頁標籤顯示正確圖示) ---
+# --- 1. 頁面基礎設定 ---
 st.set_page_config(
     page_title="AI 課堂速記助手",
     page_icon="🎓",
-    layout="wide"  # 使用寬螢幕模式，看起來更專業
+    layout="wide"
 )
 
 # --- 2. 側邊欄：設定與說明區 ---
 with st.sidebar:
-    # 你可以換成自己喜歡的 LOGO 圖片網址
     st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=100)
     st.title("⚙️ 設定控制台")
     
-    # API Key 輸入區 (讓評審或使用者自己輸入 Key，這是比賽較安全的做法)
+    # API Key 輸入區
     api_key = st.text_input("🔑 輸入 Google API Key", type="password")
     st.caption("本系統使用 Google Gemini 1.5 Flash 模型 (免費且快速)。")
     st.markdown("[👉 點此取得免費 API Key](https://aistudio.google.com/app/apikey)")
@@ -53,9 +52,13 @@ if uploaded_file and api_key:
     if st.button("🚀 開始 AI 分析", use_container_width=True):
         
         # 設定 Google API
-        genai.configure(api_key=api_key)
+        try:
+            genai.configure(api_key=api_key)
+        except Exception as e:
+            st.error(f"API Key 設定失敗，請檢查格式。錯誤：{e}")
+            st.stop()
         
-        # 使用兩欄排版：左邊顯示進度狀態，右邊顯示筆記結果
+        # 使用兩欄排版
         col1, col2 = st.columns([1, 2])
         
         with col1:
@@ -64,26 +67,28 @@ if uploaded_file and api_key:
             
             try:
                 # 步驟 A: 處理檔案
-                status_text.text("正在讀取音檔...")
+                status_text.text("1/3 正在讀取音檔...")
                 
-                # 建立暫存檔 (因為 Google API 需要讀取實體檔案)
+                # 建立暫存檔
                 with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
                     tmp_file.write(uploaded_file.getvalue())
                     tmp_file_path = tmp_file.name
 
                 # 步驟 B: 上傳給 Google
-                status_text.text("正在上傳至 AI 大腦 (Gemini)...")
+                status_text.text("2/3 正在上傳至 AI 大腦 (Gemini)...")
                 myfile = genai.upload_file(tmp_file_path)
                 
                 # 步驟 C: AI 生成內容
-                status_text.text("AI 正在聆聽並撰寫筆記 (請稍候)...")
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                status_text.text("3/3 AI 正在聆聽並撰寫筆記 (請稍候)...")
+                
+                # --- 關鍵修正：使用具體版本號 'gemini-1.5-flash-001' 以避免找不到模型 ---
+                model = genai.GenerativeModel("gemini-1.5-flash-001")
 
-                # 給 AI 的指令 (Prompt) - 這是影響品質的關鍵
+                # 給 AI 的指令 (Prompt)
                 prompt = """
                 你是一位教學經驗豐富的教授助教。請仔細聆聽這段課堂錄音，並為學生製作一份高品質的學習筆記。
                 
-                請依照以下 Markdown 格式輸出：
+                請依照以下 Markdown 格式輸出，繁體中文呈現：
                 
                 # 📝 [課程主題自動生成] 學習筆記
                 
@@ -113,6 +118,7 @@ if uploaded_file and api_key:
                 
             except Exception as e:
                 status_text.error(f"發生錯誤：{e}")
+                st.error("若出現 404 錯誤，請確認 GitHub 上的 requirements.txt 是否已包含 google-generativeai>=0.8.3")
                 result_text = None
 
         # 在右邊欄位顯示結果
@@ -131,7 +137,6 @@ if uploaded_file and api_key:
                 )
 
 elif not uploaded_file:
-    # 當還沒上傳檔案時的提示
     st.info("👈 請先在左側輸入 API Key，並在上方上傳錄音檔以開始使用。")
 
 elif not api_key:
