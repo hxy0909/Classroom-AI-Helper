@@ -3,10 +3,11 @@ import google.generativeai as genai
 import tempfile
 import os
 import time
+import re  # 新增：用於精準提取代碼
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="AI 課堂速記助手 (Pro版)", 
+    page_title="AI 課堂速記助手", 
     page_icon="🎓", 
     layout="wide"
 )
@@ -74,16 +75,16 @@ if uploaded_file and api_key:
             status.write("☁️ 上傳至 Google Gemini 大腦...")
             myfile = genai.upload_file(tmp_path)
             
-            # 等待檔案處理完成 (雖然 flash 很快，但加上這段更保險)
+            # 等待檔案處理完成
             while myfile.state.name == "PROCESSING":
                 time.sleep(1)
                 myfile = genai.get_file(myfile.name)
 
-            # C. 生成內容 (一次生成所有需要的內容)
+            # C. 生成內容
             status.write("🧠 AI 正在理解內容、繪製心智圖與出題...")
             model = genai.GenerativeModel(selected_model_name)
             
-            # --- 複合式 Prompt (這就是強大的關鍵) ---
+            # --- 複合式 Prompt ---
             prompt = f"""
             你是一位全能的教授助教。請聆聽這段錄音，並根據使用者要求的風格「{note_style}」，完成以下三項任務。
             請務必使用特定的分隔線來區分這三部分，以便我程式切割。
@@ -97,9 +98,10 @@ if uploaded_file and api_key:
 
             ### PART 2: 心智圖
             請根據內容，生成一段 "Graphviz DOT" 語言的程式碼。
+            - **重要：請務必在 node 設定中加入 `fontname="Microsoft JhengHei"` 或 `fontname="SimHei"` 以支援中文字體，避免亂碼。**
             - 只要給我程式碼內容，不要用 markdown code block 包裹。
             - 結構要清晰，從核心主題發散。
-            - 請確保是有效的 DOT 語法。
+            - 請確保是有效的 DOT 語法，以 `digraph` 開頭。
 
             ### PART 3: 測驗題
             請出 3 題單選題，格式如下：
@@ -121,18 +123,27 @@ if uploaded_file and api_key:
             status.update(label="✅ 分析完成！", state="complete", expanded=False)
             
             # --- 解析 AI 回傳的內容 ---
-            # 透過分隔線切割內容
             try:
                 parts = full_text.split("---SEPARATOR---")
                 note_content = parts[0]
-                graphviz_code = parts[1].replace("```dot", "").replace("```", "").strip() # 清理可能的多餘符號
+                
+                # --- [修正] 更強健的圖表代碼提取邏輯 ---
+                raw_graph_content = parts[1] if len(parts) > 1 else ""
+                # 使用 Regex 抓取 digraph {...} 區塊，忽略前後雜訊
+                match = re.search(r'digraph\s+.*\{.*\}', raw_graph_content, re.DOTALL)
+                if match:
+                    graphviz_code = match.group(0)
+                else:
+                    # 備用：如果 regex 抓不到，嘗試簡單清理
+                    graphviz_code = raw_graph_content.replace("```dot", "").replace("```graphviz", "").replace("```", "").strip()
+
                 quiz_content = parts[2] if len(parts) > 2 else "生成測驗題時發生錯誤"
             except:
                 note_content = full_text
                 graphviz_code = None
                 quiz_content = "解析格式錯誤，請重試"
 
-            # --- 顯示結果 (使用 Tabs 分頁) ---
+            # --- 顯示結果 ---
             tab1, tab2, tab3 = st.tabs(["📝 重點筆記", "🌳 知識心智圖", "❓ 自我測驗"])
             
             with tab1:
@@ -143,10 +154,13 @@ if uploaded_file and api_key:
                 st.info("這是 AI 根據錄音內容自動繪製的結構圖：")
                 if graphviz_code:
                     try:
-                        st.graphviz_chart(graphviz_code)
+                        # 嘗試渲染圖表
+                        st.graphviz_chart(graphviz_code, use_container_width=True)
                     except Exception as e:
-                        st.error("心智圖生成失敗 (語法錯誤)，請再試一次。")
-                        st.code(graphviz_code)
+                        st.error("心智圖生成失敗 (語法或環境錯誤)，以下是原始代碼：")
+                        st.code(graphviz_code, language="dot")
+                        with st.expander("查看錯誤訊息"):
+                            st.write(e)
                 else:
                     st.warning("AI 未能生成有效的心智圖代碼。")
 
