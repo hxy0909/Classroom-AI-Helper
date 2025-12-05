@@ -7,7 +7,7 @@ import re
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="AI 課堂速記助手 (防當機版)", 
+    page_title="AI 課堂速記助手", 
     page_icon="🛡️", 
     layout="wide"
 )
@@ -134,3 +134,4 @@ if uploaded_file and api_key:
             except:
                 note_content = full_text
                 graph
+
