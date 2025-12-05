@@ -3,176 +3,134 @@ import google.generativeai as genai
 import tempfile
 import os
 import time
-import re  # 新增：用於精準提取代碼
+import re
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="AI 課堂速記助手", 
-    page_icon="🎓", 
+    page_title="AI 課堂速記助手 (防當機版)", 
+    page_icon="🛡️", 
     layout="wide"
 )
 
 # --- 2. 側邊欄：設定 ---
 with st.sidebar:
+    st.image("https://cdn-icons-png.flaticon.com/512/4712/4712035.png", width=80)
     st.title("⚙️ 設定控制台")
-    api_key = st.text_input("🔑 輸入 Google API Key", type="password")
     
+    # 自動判定是否需要輸入 Key
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        st.success("✅ 已載入內建金鑰")
+    else:
+        api_key = st.text_input("🔑 輸入 Google API Key", type="password")
+
     st.divider()
     
-    # 顯示版本供參考
-    st.caption(f"AI 套件版本: {genai.__version__}")
-    
-    st.markdown("---")
-    st.info("👇 模型選擇：")
-    
-    # 模型選項
+    st.info("👇 遇到 429 錯誤請切換模型：")
+    # 將 1.5-flash 設為預設第一個，因為最穩定
     model_options = [
-        "gemini-2.0-flash",       
-        "gemini-2.5-flash",       
-        "gemini-1.5-flash",       
+        "gemini-1.5-flash",       # 推薦：最穩定
+        "gemini-2.0-flash",       # 最新：容易 429
         "gemini-1.5-pro"          
     ]
     selected_model_name = st.selectbox("選擇模型", model_options, index=0)
     
     st.divider()
-    st.markdown("### 🎨 筆記風格設定")
-    note_style = st.radio(
-        "你希望筆記寫給誰看？",
-        ["一般大眾 (淺顯易懂)", "大學生 (學術專業)", "考試衝刺 (只列考點)"]
-    )
+    note_style = st.radio("筆記風格：", ["一般大眾", "專業學術", "考試衝刺"])
 
 # --- 3. 主畫面 ---
-st.title("🎓 AI 課堂速記助手 Pro")
-st.caption(f"目前使用模型：{selected_model_name} | 風格：{note_style}")
+st.title("🎓 AI 課堂速記助手")
 
-uploaded_file = st.file_uploader("上傳錄音檔 (mp3, wav, m4a)", type=['mp3', 'wav', 'm4a', 'aac'])
+uploaded_file = st.file_uploader("請上傳課堂錄音", type=['mp3', 'wav', 'm4a', 'aac'])
 
-# 如果有上傳檔案，顯示播放器
 if uploaded_file:
     st.audio(uploaded_file, format='audio/mp3')
 
 if uploaded_file and api_key:
-    if st.button("🚀 開始全方位分析", use_container_width=True):
+    if st.button("🚀 開始分析", use_container_width=True):
         
-        # 設定 API
         try:
             genai.configure(api_key=api_key)
         except Exception as e:
-            st.error(f"API Key 錯誤: {e}")
+            st.error(f"API Key 設定失敗: {e}")
             st.stop()
 
-        # 建立處理狀態區
-        status = st.status("正在進行 AI 分析...", expanded=True)
+        status = st.status("正在啟動...", expanded=True)
         
         try:
             # A. 處理檔案
-            status.write("📂 讀取與處理音檔中...")
+            status.write("📂 讀取錄音檔...")
             with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp:
                 tmp.write(uploaded_file.getvalue())
                 tmp_path = tmp.name
 
             # B. 上傳
-            status.write("☁️ 上傳至 Google Gemini 大腦...")
+            status.write("☁️ 上傳至雲端 (若卡住請稍候)...")
             myfile = genai.upload_file(tmp_path)
             
-            # 等待檔案處理完成
+            # 等待檔案處理 (加入超時機制避免無限迴圈)
+            check_count = 0
             while myfile.state.name == "PROCESSING":
-                time.sleep(1)
+                time.sleep(2)
                 myfile = genai.get_file(myfile.name)
+                check_count += 1
+                if check_count > 30: # 等待超過 60秒
+                    raise Exception("檔案處理過久，請重新上傳或壓縮檔案。")
 
-            # C. 生成內容
-            status.write("🧠 AI 正在理解內容、繪製心智圖與出題...")
+            # C. 生成 (加入超強自動重試機制)
+            status.write(f"🧠 AI ({selected_model_name}) 正在思考中...")
             model = genai.GenerativeModel(selected_model_name)
             
-            # --- 複合式 Prompt ---
             prompt = f"""
-            你是一位全能的教授助教。請聆聽這段錄音，並根據使用者要求的風格「{note_style}」，完成以下三項任務。
-            請務必使用特定的分隔線來區分這三部分，以便我程式切割。
+            你是一位專業助教。請聆聽錄音並依風格「{note_style}」製作內容。
+            請用 "---SEPARATOR---" 分隔以下三部分：
 
-            ### PART 1: 筆記
-            請用 Markdown 整理詳細筆記：
-            1. 課程摘要 (200字內)
-            2. 關鍵名詞解釋 (表格呈現)
-            3. 深入概念解析
-            4. 考試猜題
+            ### PART 1: 筆記 (Markdown)
+            1. 摘要
+            2. 名詞解釋表格
+            3. 重點詳解
+            4. 考前猜題
 
-            ### PART 2: 心智圖
-            請根據內容，生成一段 "Graphviz DOT" 語言的程式碼。
-            - **重要：請務必在 node 設定中加入 `fontname="Microsoft JhengHei"` 或 `fontname="SimHei"` 以支援中文字體，避免亂碼。**
-            - 只要給我程式碼內容，不要用 markdown code block 包裹。
-            - 結構要清晰，從核心主題發散。
-            - 請確保是有效的 DOT 語法，以 `digraph` 開頭。
-
-            ### PART 3: 測驗題
-            請出 3 題單選題，格式如下：
-            Q1: 題目...
-            (A) 選項...
-            (B) 選項...
-            (C) 選項...
-            (D) 選項...
-            ✅ 正解：(選項) 解析...
-
-            請用 "---SEPARATOR---" 這串文字來分隔這三個部分。
+            ### PART 2: 心智圖代碼 (Graphviz)
+            - 必須包含 `fontname="Microsoft JhengHei"`
+            - 只要代碼，不要 Markdown 標記 ` ``` `
+            
+            ### PART 3: 測驗題 (3題)
+            請用 "---SEPARATOR---" 分隔。
             """
             
-            response = model.generate_content([myfile, prompt])
-            full_text = response.text
+            # --- [關鍵修改] 指數退避重試機制 (Exponential Backoff) ---
+            max_retries = 5
+            base_delay = 5  # 基礎等待秒數
+            full_text = None
             
-            # 清理暫存檔
+            for i in range(max_retries):
+                try:
+                    response = model.generate_content([myfile, prompt])
+                    full_text = response.text
+                    break  # 成功就跳出
+                except Exception as e:
+                    if "429" in str(e):
+                        wait_time = base_delay * (2 ** i) # 5s, 10s, 20s, 40s...
+                        status.write(f"⚠️ 伺服器忙碌 (429)，正在冷卻 {wait_time} 秒後重試 ({i+1}/{max_retries})...")
+                        time.sleep(wait_time)
+                    else:
+                        raise e # 其他錯誤直接拋出
+
+            if not full_text:
+                raise Exception("伺服器過於繁忙，已重試多次無效。請稍後再試，或切換至 gemini-1.5-flash 模型。")
+            
+            # --- 完成後的清理與顯示 ---
             os.remove(tmp_path)
             status.update(label="✅ 分析完成！", state="complete", expanded=False)
             
-            # --- 解析 AI 回傳的內容 ---
             try:
                 parts = full_text.split("---SEPARATOR---")
                 note_content = parts[0]
-                
-                # --- [修正] 更強健的圖表代碼提取邏輯 ---
-                raw_graph_content = parts[1] if len(parts) > 1 else ""
-                # 使用 Regex 抓取 digraph {...} 區塊，忽略前後雜訊
-                match = re.search(r'digraph\s+.*\{.*\}', raw_graph_content, re.DOTALL)
-                if match:
-                    graphviz_code = match.group(0)
-                else:
-                    # 備用：如果 regex 抓不到，嘗試簡單清理
-                    graphviz_code = raw_graph_content.replace("```dot", "").replace("```graphviz", "").replace("```", "").strip()
-
-                quiz_content = parts[2] if len(parts) > 2 else "生成測驗題時發生錯誤"
+                raw_graph = parts[1] if len(parts) > 1 else ""
+                match = re.search(r'digraph\s+.*\{.*\}', raw_graph, re.DOTALL)
+                graphviz_code = match.group(0) if match else raw_graph.replace("```", "").strip()
+                quiz_content = parts[2] if len(parts) > 2 else ""
             except:
                 note_content = full_text
-                graphviz_code = None
-                quiz_content = "解析格式錯誤，請重試"
-
-            # --- 顯示結果 ---
-            tab1, tab2, tab3 = st.tabs(["📝 重點筆記", "🌳 知識心智圖", "❓ 自我測驗"])
-            
-            with tab1:
-                st.markdown(note_content)
-                st.download_button("📥 下載筆記", note_content, "lecture_notes.md")
-                
-            with tab2:
-                st.info("這是 AI 根據錄音內容自動繪製的結構圖：")
-                if graphviz_code:
-                    try:
-                        # 嘗試渲染圖表
-                        st.graphviz_chart(graphviz_code, use_container_width=True)
-                    except Exception as e:
-                        st.error("心智圖生成失敗 (語法或環境錯誤)，以下是原始代碼：")
-                        st.code(graphviz_code, language="dot")
-                        with st.expander("查看錯誤訊息"):
-                            st.write(e)
-                else:
-                    st.warning("AI 未能生成有效的心智圖代碼。")
-
-            with tab3:
-                st.markdown("### 🎯 隨堂小測驗")
-                st.markdown(quiz_content)
-                with st.expander("查看測驗詳解"):
-                    st.write("答案已包含在上方內容中。")
-
-        except Exception as e:
-            status.update(label="❌ 發生錯誤", state="error")
-            st.error(f"詳細錯誤: {e}")
-
-elif not api_key:
-    st.warning("請在左側輸入 API Key")
+                graph
