@@ -7,7 +7,7 @@ import re
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="AI 課堂速記助手 (防當機版)", 
+    page_title="AI 課堂速記助手 (修復版)", 
     page_icon="🛡️", 
     layout="wide"
 )
@@ -26,13 +26,12 @@ with st.sidebar:
 
     st.divider()
     
-    st.info("👇 遇到 429 錯誤請切換模型：")
-    # 將 1.5-flash 設為預設第一個，因為最穩定
-    # 更新：移除可能導致 404 的舊版別名，使用較新的名稱
+    st.info("👇 若遇到錯誤，請嘗試切換模型：")
+    # 更新模型清單：移除可能導致 404 的舊版別名，保留最穩定的版本
     model_options = [
-        "gemini-1.5-flash",       # 推薦：最穩定
-        "gemini-2.0-flash",       # 最新：速度快但容易遇限流
-        "gemini-1.5-pro-latest"   # 嘗試使用 latest 標籤避免 404
+        "gemini-1.5-flash",       # 【推薦】最穩定、速度快、免費額度高
+        "gemini-2.0-flash-exp",   # 最新實驗版 (若 1.5 忙碌可嘗試此項)
+        "gemini-1.5-pro"          # 強力版 (偶爾會因為負載過高而 429)
     ]
     selected_model_name = st.selectbox("選擇模型", model_options, index=0)
     
@@ -42,7 +41,7 @@ with st.sidebar:
 # --- 3. 主畫面 ---
 st.title("🎓 AI 課堂速記助手")
 
-uploaded_file = st.file_uploader("請上傳課堂錄音", type=['mp3', 'wav', 'm4a', 'aac'])
+uploaded_file = st.file_uploader("請上傳課堂錄音 (支援 mp3, wav, m4a)", type=['mp3', 'wav', 'm4a', 'aac'])
 
 if uploaded_file:
     st.audio(uploaded_file, format='audio/mp3')
@@ -102,30 +101,36 @@ if uploaded_file and api_key:
             請用 "---SEPARATOR---" 分隔。
             """
             
-            # --- [關鍵修改] 指數退避重試機制 (Exponential Backoff) ---
-            max_retries = 5
+            # --- [關鍵修復] 指數退避重試機制 (修正縮排錯誤) ---
+            max_retries = 3
             base_delay = 5  # 基礎等待秒數
             full_text = None
             
             for i in range(max_retries):
                 try:
+                    # 嘗試生成內容
                     response = model.generate_content([myfile, prompt])
                     full_text = response.text
-                    break  # 成功就跳出
+                    break  # 成功就跳出迴圈
                 except Exception as e:
-                    # 這裡是內層 try 的 except，必須正確對齊
+                    # 這裡是內層 try 的 except，必須與上方的 try 對齊
                     if "429" in str(e):
-                        wait_time = base_delay * (2 ** i) # 5s, 10s, 20s, 40s...
+                        wait_time = base_delay * (2 ** i) # 5s, 10s, 20s
                         status.write(f"⚠️ 伺服器忙碌 (429)，正在冷卻 {wait_time} 秒後重試 ({i+1}/{max_retries})...")
                         time.sleep(wait_time)
                     else:
-                        raise e # 其他錯誤直接拋出
+                        # 如果不是 429 錯誤 (例如 404)，則不重試，直接拋出
+                        raise e 
 
             if not full_text:
-                raise Exception("伺服器過於繁忙，已重試多次無效。請稍後再試，或切換至 gemini-1.5-flash 模型。")
+                raise Exception("伺服器過於繁忙或發生錯誤，請稍後再試。")
             
             # --- 完成後的清理與顯示 ---
-            os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except:
+                pass # 如果刪除失敗也沒關係
+                
             status.update(label="✅ 分析完成！", state="complete", expanded=False)
             
             # 解析回應內容
@@ -133,9 +138,9 @@ if uploaded_file and api_key:
                 parts = full_text.split("---SEPARATOR---")
                 note_content = parts[0]
                 
-                # 處理心智圖代碼 (增強 regex 以應對不同格式)
+                # 處理心智圖代碼
                 raw_graph = parts[1] if len(parts) > 1 else ""
-                match = re.search(r'digraph\s+.*\}', raw_graph, re.DOTALL)
+                match = re.search(r'digraph\s+.*\{.*\}', raw_graph, re.DOTALL)
                 if match:
                     graphviz_code = match.group(0)
                 else:
@@ -165,13 +170,13 @@ if uploaded_file and api_key:
                 st.markdown(quiz_content)
 
         except Exception as e:
-            # 這是外層 try 的 except，對應第 52 行的 try
+            # 這是外層 try 的 except
             status.update(label="❌ 發生錯誤", state="error")
             st.error(f"錯誤訊息: {e}")
             if "429" in str(e):
-                st.warning("👉 建議：請在左側將模型切換為 **gemini-1.5-flash**，它的免費額度較高。")
-            if "404" in str(e):
-                st.warning("👉 建議：此模型可能暫時無法使用，請在左側切換其他模型 (例如 gemini-1.5-flash)。")
+                st.warning("👉 建議：請在左側將模型切換為 **gemini-1.5-flash**，它的免費額度較高且穩定。")
+            elif "404" in str(e):
+                st.warning("👉 建議：此模型暫時無法使用，請在左側切換至 **gemini-1.5-flash**。")
 
 elif not api_key:
     st.warning("⚠️ 請設定 Key")
