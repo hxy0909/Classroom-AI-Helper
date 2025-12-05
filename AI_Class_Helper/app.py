@@ -7,7 +7,7 @@ import re
 
 # --- 1. 頁面設定 ---
 st.set_page_config(
-    page_title="AI 課堂速記助手", 
+    page_title="AI 課堂速記助手 (防當機版)", 
     page_icon="🛡️", 
     layout="wide"
 )
@@ -28,10 +28,11 @@ with st.sidebar:
     
     st.info("👇 遇到 429 錯誤請切換模型：")
     # 將 1.5-flash 設為預設第一個，因為最穩定
+    # 更新：移除可能導致 404 的舊版別名，使用較新的名稱
     model_options = [
         "gemini-1.5-flash",       # 推薦：最穩定
-        "gemini-2.0-flash",       # 最新：容易 429
-        "gemini-1.5-pro"          
+        "gemini-2.0-flash",       # 最新：速度快但容易遇限流
+        "gemini-1.5-pro-latest"   # 嘗試使用 latest 標籤避免 404
     ]
     selected_model_name = st.selectbox("選擇模型", model_options, index=0)
     
@@ -49,6 +50,7 @@ if uploaded_file:
 if uploaded_file and api_key:
     if st.button("🚀 開始分析", use_container_width=True):
         
+        # 1. 設定 API
         try:
             genai.configure(api_key=api_key)
         except Exception as e:
@@ -57,6 +59,7 @@ if uploaded_file and api_key:
 
         status = st.status("正在啟動...", expanded=True)
         
+        # 外層 try: 用於捕捉整體流程的錯誤
         try:
             # A. 處理檔案
             status.write("📂 讀取錄音檔...")
@@ -110,6 +113,7 @@ if uploaded_file and api_key:
                     full_text = response.text
                     break  # 成功就跳出
                 except Exception as e:
+                    # 這裡是內層 try 的 except，必須正確對齊
                     if "429" in str(e):
                         wait_time = base_delay * (2 ** i) # 5s, 10s, 20s, 40s...
                         status.write(f"⚠️ 伺服器忙碌 (429)，正在冷卻 {wait_time} 秒後重試 ({i+1}/{max_retries})...")
@@ -124,14 +128,50 @@ if uploaded_file and api_key:
             os.remove(tmp_path)
             status.update(label="✅ 分析完成！", state="complete", expanded=False)
             
+            # 解析回應內容
             try:
                 parts = full_text.split("---SEPARATOR---")
                 note_content = parts[0]
+                
+                # 處理心智圖代碼 (增強 regex 以應對不同格式)
                 raw_graph = parts[1] if len(parts) > 1 else ""
-                match = re.search(r'digraph\s+.*\{.*\}', raw_graph, re.DOTALL)
-                graphviz_code = match.group(0) if match else raw_graph.replace("```", "").strip()
+                match = re.search(r'digraph\s+.*\}', raw_graph, re.DOTALL)
+                if match:
+                    graphviz_code = match.group(0)
+                else:
+                    graphviz_code = raw_graph.replace("```dot", "").replace("```", "").strip()
+                
                 quiz_content = parts[2] if len(parts) > 2 else ""
             except:
                 note_content = full_text
-                graph
+                graphviz_code = None
+                quiz_content = ""
 
+            # 顯示結果
+            tab1, tab2, tab3 = st.tabs(["📝 筆記", "🌳 心智圖", "❓ 測驗"])
+            with tab1:
+                st.markdown(note_content)
+                st.download_button("📥 下載", note_content, "notes.md")
+            with tab2:
+                if graphviz_code:
+                    try:
+                        st.graphviz_chart(graphviz_code)
+                    except:
+                        st.error("無法繪製圖片，可能是語法錯誤")
+                        st.code(graphviz_code)
+                else:
+                    st.info("無心智圖")
+            with tab3:
+                st.markdown(quiz_content)
+
+        except Exception as e:
+            # 這是外層 try 的 except，對應第 52 行的 try
+            status.update(label="❌ 發生錯誤", state="error")
+            st.error(f"錯誤訊息: {e}")
+            if "429" in str(e):
+                st.warning("👉 建議：請在左側將模型切換為 **gemini-1.5-flash**，它的免費額度較高。")
+            if "404" in str(e):
+                st.warning("👉 建議：此模型可能暫時無法使用，請在左側切換其他模型 (例如 gemini-1.5-flash)。")
+
+elif not api_key:
+    st.warning("⚠️ 請設定 Key")
