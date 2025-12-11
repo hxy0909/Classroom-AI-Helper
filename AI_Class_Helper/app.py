@@ -1,15 +1,17 @@
+
+薪雅 <kew923894@gmail.com>
+11:42 (3分钟前)
+发送至 我
+
 import streamlit as st
 import google.generativeai as genai
 import tempfile
 import os
 import time
+import re
 
-# 1. 設定頁面基礎
-st.set_page_config(
-    page_title="AI 課堂速記助手", 
-    page_icon="📝", 
-    layout="centered" # 改回置中，閱讀筆記比較舒服
-)
+# 1. 設定頁面
+st.set_page_config(page_title="AI 課堂速記助手", page_icon="🎓", layout="wide")
 # 美化介面 CSS
 st.markdown("""
     <style>
@@ -37,11 +39,11 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
-# 2. 側邊欄設定
+# 2. 設定側邊欄
 with st.sidebar:
     st.title("⚙️ 設定")
-    
-    # 自動讀取金鑰
+   
+    # 嘗試讀取 Secrets
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
         st.success("✅ 已載入金鑰")
@@ -49,112 +51,92 @@ with st.sidebar:
         api_key = st.text_input("🔑 Google API Key", type="password")
 
     st.divider()
-    
-    st.info("👇 模型設定")
-    # 保留您的帳號能用的 2.0 模型
+   
+    st.info("👇 請注意：您的帳號需使用 2.0 系列")
+    # 【關鍵修正】根據您的截圖，您的 Key 只能用這些模型
+    # 我們把 2.0-flash 放在第一個
     model_options = [
-        "gemini-2.0-flash", 
+        "gemini-2.0-flash",
         "gemini-2.0-flash-exp",
-        "gemini-1.5-flash"
+        "gemini-1.5-flash"  # 保留備用
     ]
     model_name = st.selectbox("選擇模型", model_options)
-    
-    # 風格設定
-    style = st.radio("筆記風格", ["一般大眾 (淺顯易懂)", "專業學術 (詳細嚴謹)", "考試衝刺 (只列考點)"])
+    style = st.radio("風格", ["大眾", "學術", "考試"])
 
-# 3. 定義 AI 呼叫函式 (保留防當機重試機制)
-def generate_note(model_name, file_path, prompt):
+# 3. 定義 AI 呼叫函式 (含強力重試機制)
+def call_ai(model_name, file_path, prompt):
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
-    
+   
     # 等待檔案處理
-    with st.spinner("正在將錄音檔上傳至 AI 大腦..."):
+    with st.spinner("檔案上傳處理中..."):
         while file.state.name == "PROCESSING":
             time.sleep(2)
             file = genai.get_file(file.name)
         if file.state.name == "FAILED":
-            raise Exception("檔案處理失敗")
+            raise Exception("檔案處理失敗，請檢查格式")
 
-    # 重試機制 (解決 429 Resource Exhausted)
+    # 嘗試生成 (針對 429 錯誤進行指數退避重試)
     max_retries = 5
     for i in range(max_retries):
         try:
             response = model.generate_content([file, prompt])
             return response.text
         except Exception as e:
-            if "429" in str(e):
+            error_msg = str(e)
+            if "429" in error_msg:
+                # 如果是 429 (忙碌)，等待時間隨次數增加 (5s, 10s, 20s...)
                 wait_time = 5 * (2 ** i)
-                st.toast(f"⏳ 伺服器忙碌，休息 {wait_time} 秒後繼續...", icon="💤")
+                st.toast(f"⏳ 伺服器忙碌 (429)，正在冷卻 {wait_time} 秒後重試 ({i+1}/{max_retries})...", icon="🧊")
                 time.sleep(wait_time)
                 continue
-            elif "404" in str(e):
-                raise Exception(f"模型 {model_name} 無法使用，請切換其他模型。")
+            elif "404" in error_msg:
+                # 如果是 404，直接告訴使用者換模型
+                raise Exception(f"模型 {model_name} 不存在或無權限。請在左側切換其他模型 (例如 gemini-2.0-flash)。")
             else:
                 raise e
-    raise Exception("系統忙碌中，請稍後再試。")
+               
+    raise Exception("伺服器過於繁忙，重試多次失敗。請稍後再試。")
 
-# 4. 主程式畫面
-st.title("📝 AI 課堂速記助手")
-st.caption("專注於將錄音轉換為高品質 Markdown 筆記")
-
-uploaded = st.file_uploader("請上傳錄音檔 (mp3, wav, m4a)", type=['mp3', 'wav', 'm4a', 'aac'])
-
-if uploaded:
-    st.audio(uploaded, format='audio/mp3')
+# 4. 主程式介面
+st.title("🎓 AI 課堂速記助手")
+uploaded = st.file_uploader("上傳錄音檔", type=['mp3', 'wav', 'm4a', 'aac'])
 
 if uploaded and api_key:
-    if st.button("🚀 開始生成筆記", type="primary", use_container_width=True):
+    if st.button("🚀 開始分析"):
         genai.configure(api_key=api_key)
-        
-        # 建立狀態容器
-        status_box = st.status("🚀 AI 正在聆聽並整理重點...", expanded=True)
-        
+        status = st.status("🚀 啟動 AI 引擎...", expanded=True)
+       
         try:
-            # 儲存暫存檔
-            status_box.write("📂 讀取檔案中...")
+            status.write("📂 讀取暫存檔...")
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
                 tmp.write(uploaded.getvalue())
                 tmp_path = tmp.name
-            
-            # 設定 Prompt (只專注於筆記，不畫圖、不出題)
-            status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
+           
+            status.write(f"🧠 AI ({model_name}) 正在分析內容...")
             prompt = f"""
-            你是一位專業的教授助教。請仔細聆聽這段錄音，並根據「{style}」風格，整理出一份結構清晰的 Markdown 筆記。
-            
-            筆記結構請包含：
-            1. **課程標題與摘要** (200字內)
-            2. **關鍵名詞解釋** (使用表格呈現：名詞 | 解釋 | 重要性)
-            3. **核心觀念詳解** (請使用條列式，並適當使用粗體標示重點)
-            4. **考試重點預測** (列出老師語氣加重或重複提及的地方)
-            
-            請直接輸出 Markdown 內容，不需其他開場白。
+            你是一位專業助教。請依風格「{style}」將錄音內容整理成Markdown筆記。
+            包含：1.摘要 2.名詞解釋(表格) 3.考前猜題。
+            請直接輸出 Markdown，不要包含其他無關文字。
             """
-            
-            # 執行生成
-            note_content = generate_note(model_name, tmp_path, prompt)
-            
-            # 完成
-            status_box.update(label="✅ 筆記整理完成！", state="complete", expanded=False)
-            
-            # 顯示結果
-            st.divider()
-            st.markdown(note_content)
-            
-            # 下載按鈕
-            st.download_button(
-                label="📥 下載筆記 (.md)",
-                data=note_content,
-                file_name="lecture_note.md",
-                mime="text/markdown",
-                use_container_width=True
-            )
-            
-            # 清理檔案
+           
+            result = call_ai(model_name, tmp_path, prompt)
+           
+            status.update(label="✅ 分析完成！", state="complete", expanded=False)
+            st.markdown(result)
+            st.download_button("下載筆記", result, "notes.md")
+           
             os.remove(tmp_path)
-            
+           
         except Exception as e:
-            status_box.update(label="❌ 發生錯誤", state="error")
-            st.error(f"錯誤訊息: {e}")
+            status.update(label="❌ 發生錯誤", state="error")
+            st.error(f"錯誤詳細訊息: {e}")
+           
+            # 給出具體建議
+            if "429" in str(e):
+                st.warning("💡 建議：現在伺服器很擠，請等待幾分鐘後再按一次開始。")
+            if "404" in str(e):
+                st.warning("💡 建議：您的 Key 不支援目前的模型，請在側邊欄換一個模型試試看。")
 
 elif not api_key:
-    st.warning("請在左側輸入 API Key 以開始使用")
+    st.warning("請輸入 API Key")
