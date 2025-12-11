@@ -1,8 +1,3 @@
-
-薪雅 <kew923894@gmail.com>
-11:42 (3分钟前)
-发送至 我
-
 import streamlit as st
 import google.generativeai as genai
 import tempfile
@@ -140,3 +135,4 @@ if uploaded and api_key:
 
 elif not api_key:
     st.warning("請輸入 API Key")
+
