@@ -7,7 +7,33 @@ import re
 
 # 1. 設定頁面
 st.set_page_config(page_title="AI 課堂速記助手", page_icon="🎓", layout="wide")
-
+# 美化介面 CSS
+st.markdown("""
+    <style>
+    .stApp {
+        background-color: #F5F7F9;
+    }
+    .stButton>button {
+        color: white;
+        background-color: #FF4B4B;
+        border-radius: 20px;
+        height: 3em;
+        width: 100%;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #FFFFFF;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 # 2. 設定側邊欄
 with st.sidebar:
     st.title("⚙️ 設定")
@@ -109,3 +135,4 @@ if uploaded and api_key:
 
 elif not api_key:
     st.warning("請輸入 API Key")
+
