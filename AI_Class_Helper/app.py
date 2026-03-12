@@ -8,7 +8,7 @@ import time
 st.set_page_config(
     page_title="AI 課堂速記助手", 
     page_icon="📝", 
-    layout="centered" # 改回置中，閱讀筆記比較舒服
+    layout="centered"
 )
 # 美化介面 CSS
 st.markdown("""
@@ -37,6 +37,7 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
 # 2. 側邊欄設定
 with st.sidebar:
     st.title("⚙️ 設定")
@@ -51,8 +52,9 @@ with st.sidebar:
     st.divider()
     
     st.info("👇 模型設定")
-    # 保留您的帳號能用的 2.0 模型
+    # 【關鍵修改】加入 2.5-flash 作為第一選項，它目前比較不容易塞車
     model_options = [
+        "gemini-2.5-flash",
         "gemini-2.0-flash", 
         "gemini-2.0-flash-exp",
         "gemini-1.5-flash"
@@ -62,8 +64,8 @@ with st.sidebar:
     # 風格設定
     style = st.radio("筆記風格", ["一般大眾 (淺顯易懂)", "專業學術 (詳細嚴謹)", "考試衝刺 (只列考點)"])
 
-# 3. 定義 AI 呼叫函式 (保留防當機重試機制)
-def generate_note(model_name, file_path, prompt):
+# 3. 定義 AI 呼叫函式 (升級版重試機制)
+def generate_note(model_name, file_path, prompt, status_box):
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
     
@@ -75,7 +77,7 @@ def generate_note(model_name, file_path, prompt):
         if file.state.name == "FAILED":
             raise Exception("檔案處理失敗")
 
-    # 重試機制 (解決 429 Resource Exhausted)
+    # 重試機制
     max_retries = 5
     for i in range(max_retries):
         try:
@@ -83,15 +85,16 @@ def generate_note(model_name, file_path, prompt):
             return response.text
         except Exception as e:
             if "429" in str(e):
-                wait_time = 5 * (2 ** i)
-                st.toast(f"⏳ 伺服器忙碌，休息 {wait_time} 秒後繼續...", icon="💤")
+                wait_time = 10 * (i + 1)
+                # 【關鍵修改】不再使用會消失的 toast，而是直接寫入狀態欄中，讓你清楚看到重試進度
+                status_box.write(f"⚠️ Google 伺服器忙碌中。自動冷卻 {wait_time} 秒後進行第 {i+1} 次重試...")
                 time.sleep(wait_time)
                 continue
             elif "404" in str(e):
                 raise Exception(f"模型 {model_name} 無法使用，請切換其他模型。")
             else:
                 raise e
-    raise Exception("系統忙碌中，請稍後再試。")
+    raise Exception("系統忙碌中，已經盡力重試。請過幾分鐘再試。")
 
 # 4. 主程式畫面
 st.title("📝 AI 課堂速記助手")
@@ -116,7 +119,7 @@ if uploaded and api_key:
                 tmp.write(uploaded.getvalue())
                 tmp_path = tmp.name
             
-            # 設定 Prompt (只專注於筆記，不畫圖、不出題)
+            # 設定 Prompt
             status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
             prompt = f"""
             你是一位專業的教授助教。請仔細聆聽這段錄音，並根據「{style}」風格，整理出一份結構清晰的 Markdown 筆記。
@@ -130,8 +133,8 @@ if uploaded and api_key:
             請直接輸出 Markdown 內容，不需其他開場白。
             """
             
-            # 執行生成
-            note_content = generate_note(model_name, tmp_path, prompt)
+            # 執行生成 (把 status_box 傳進去，讓它能印出重試訊息)
+            note_content = generate_note(model_name, tmp_path, prompt, status_box)
             
             # 完成
             status_box.update(label="✅ 筆記整理完成！", state="complete", expanded=False)
