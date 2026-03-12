@@ -8,8 +8,9 @@ import time
 st.set_page_config(
     page_title="AI 課堂速記助手", 
     page_icon="📝", 
-    layout="centered"
+    layout="centered" 
 )
+
 # 美化介面 CSS
 st.markdown("""
     <style>
@@ -42,7 +43,6 @@ st.markdown("""
 with st.sidebar:
     st.title("⚙️ 設定")
     
-    # 自動讀取金鑰
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
         st.success("✅ 已載入金鑰")
@@ -52,7 +52,6 @@ with st.sidebar:
     st.divider()
     
     st.info("👇 模型設定")
-    # 【關鍵修改】加入 2.5-flash 作為第一選項，它目前比較不容易塞車
     model_options = [
         "gemini-2.5-flash",
         "gemini-2.0-flash", 
@@ -61,15 +60,13 @@ with st.sidebar:
     ]
     model_name = st.selectbox("選擇模型", model_options)
     
-    # 風格設定
     style = st.radio("筆記風格", ["一般大眾 (淺顯易懂)", "專業學術 (詳細嚴謹)", "考試衝刺 (只列考點)"])
 
-# 3. 定義 AI 呼叫函式 (升級版重試機制)
+# 3. 定義 AI 呼叫函式
 def generate_note(model_name, file_path, prompt, status_box):
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
     
-    # 等待檔案處理
     with st.spinner("正在將錄音檔上傳至 AI 大腦..."):
         while file.state.name == "PROCESSING":
             time.sleep(2)
@@ -77,7 +74,6 @@ def generate_note(model_name, file_path, prompt, status_box):
         if file.state.name == "FAILED":
             raise Exception("檔案處理失敗")
 
-    # 重試機制
     max_retries = 5
     for i in range(max_retries):
         try:
@@ -86,7 +82,6 @@ def generate_note(model_name, file_path, prompt, status_box):
         except Exception as e:
             if "429" in str(e):
                 wait_time = 10 * (i + 1)
-                # 【關鍵修改】不再使用會消失的 toast，而是直接寫入狀態欄中，讓你清楚看到重試進度
                 status_box.write(f"⚠️ Google 伺服器忙碌中。自動冷卻 {wait_time} 秒後進行第 {i+1} 次重試...")
                 time.sleep(wait_time)
                 continue
@@ -100,26 +95,43 @@ def generate_note(model_name, file_path, prompt, status_box):
 st.title("📝 AI 課堂速記助手")
 st.caption("專注於將錄音轉換為高品質 Markdown 筆記")
 
-uploaded = st.file_uploader("請上傳錄音檔 (mp3, wav, m4a)", type=['mp3', 'wav', 'm4a', 'aac'])
+# --- 【關鍵修改區】使用 Tabs 將輸入方式分為兩種 ---
+tab_upload, tab_record = st.tabs(["📂 上傳錄音檔", "🎙️ 網頁即時錄音"])
 
-if uploaded:
-    st.audio(uploaded, format='audio/mp3')
+# 建立一個變數來統一存放最終要分析的音檔資料
+audio_data = None 
 
-if uploaded and api_key:
+with tab_upload:
+    uploaded = st.file_uploader("請上傳錄音檔 (mp3, wav, m4a)", type=['mp3', 'wav', 'm4a', 'aac'])
+    if uploaded:
+        audio_data = uploaded
+        st.audio(audio_data)
+
+with tab_record:
+    st.info("💡 允許瀏覽器使用麥克風後，點擊下方按鈕即可開始錄音。")
+    recorded = st.audio_input("開始錄製語音")
+    if recorded:
+        audio_data = recorded
+# --- 修改結束 ---
+
+if audio_data and api_key:
     if st.button("🚀 開始生成筆記", type="primary", use_container_width=True):
         genai.configure(api_key=api_key)
         
-        # 建立狀態容器
         status_box = st.status("🚀 AI 正在聆聽並整理重點...", expanded=True)
         
         try:
-            # 儲存暫存檔
             status_box.write("📂 讀取檔案中...")
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-                tmp.write(uploaded.getvalue())
+            
+            # --- 【判斷檔案副檔名】確保即時錄音(wav)也能正確存檔 ---
+            file_ext = ".wav" # 預設為 wav
+            if hasattr(audio_data, "name") and audio_data.name:
+                file_ext = f".{audio_data.name.split('.')[-1]}"
+                
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                tmp.write(audio_data.getvalue())
                 tmp_path = tmp.name
             
-            # 設定 Prompt
             status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
             prompt = f"""
             你是一位專業的教授助教。請仔細聆聽這段錄音，並根據「{style}」風格，整理出一份結構清晰的 Markdown 筆記。
@@ -133,17 +145,13 @@ if uploaded and api_key:
             請直接輸出 Markdown 內容，不需其他開場白。
             """
             
-            # 執行生成 (把 status_box 傳進去，讓它能印出重試訊息)
             note_content = generate_note(model_name, tmp_path, prompt, status_box)
             
-            # 完成
             status_box.update(label="✅ 筆記整理完成！", state="complete", expanded=False)
             
-            # 顯示結果
             st.divider()
             st.markdown(note_content)
             
-            # 下載按鈕
             st.download_button(
                 label="📥 下載筆記 (.md)",
                 data=note_content,
@@ -152,7 +160,6 @@ if uploaded and api_key:
                 use_container_width=True
             )
             
-            # 清理檔案
             os.remove(tmp_path)
             
         except Exception as e:
