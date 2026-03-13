@@ -37,8 +37,8 @@ st.markdown("""
 # --- 2. 帳號登入系統 (新增) ---
 # 預設的測試帳號密碼 (您可以自行新增或修改)
 USERS = {
-    "student": {"password": "123", "role": "👩‍🎓 學生 (生成筆記)"},
-    "teacher": {"password": "456", "role": "👨‍🏫 教師 (生成教材)"}
+    "student": {"password": "123", "role": "👩‍🎓 學生"},
+    "teacher": {"password": "456", "role": "👨‍🏫 教師"}
 }
 
 # 初始化 Session State 來記住登入狀態
@@ -249,4 +249,5 @@ if audio_data and api_key:
 
 elif not api_key:
     st.warning("⚠️ 請在左側輸入 API Key 以開始使用")
+
 
