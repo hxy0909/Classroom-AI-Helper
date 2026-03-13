@@ -78,7 +78,16 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.session_state.user_role = None
         st.rerun()
-        
+
+    st.divider()
+    
+    # 語言設定 (新增多國語言支援)
+    st.info("🌐 輸出語言設定")
+    output_language = st.selectbox(
+        "請選擇生成的筆記語言 (AI 會自動翻譯)",
+        ["繁體中文", "English", "日本語", "한국어", "Español", "Français", "Deutsch", "簡體中文", "自動偵測 (與錄音相同)"]
+    )
+    
     st.divider()
     
     # API Key 設定
@@ -100,14 +109,7 @@ with st.sidebar:
     ]
     model_name = st.selectbox("選擇模型", model_options)
 
-    st.divider()
     
-    # 語言設定 (新增多國語言支援)
-    st.info("🌐 輸出語言設定")
-    output_language = st.selectbox(
-        "請選擇生成的筆記語言 (AI 會自動翻譯)",
-        ["繁體中文", "English", "日本語", "한국어", "Español", "Français", "Deutsch", "簡體中文", "自動偵測 (與錄音相同)"]
-    )
 
 # --- 3. 定義 AI 呼叫函式 (含防當機機制) ---
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
@@ -247,3 +249,4 @@ if audio_data and api_key:
 
 elif not api_key:
     st.warning("⚠️ 請在左側輸入 API Key 以開始使用")
+
