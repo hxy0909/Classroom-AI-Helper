@@ -63,6 +63,15 @@ with st.sidebar:
     ]
     model_name = st.selectbox("選擇模型", model_options)
 
+    st.divider()
+    
+    # 語言設定 (新增多國語言支援)
+    st.info("🌐 輸出語言設定")
+    output_language = st.selectbox(
+        "請選擇生成的筆記語言 (AI 會自動翻譯)",
+        ["繁體中文", "English", "日本語", "한국어", "Español", "Français", "Deutsch", "簡體中文", "自動偵測 (與錄音相同)"]
+    )
+
 # --- 3. 定義 AI 呼叫函式 (含防當機機制) ---
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     model = genai.GenerativeModel(model_name)
@@ -93,13 +102,19 @@ def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     raise Exception("系統忙碌中，已經盡力重試。請稍後再試。")
 
 # --- 4. 主程式畫面 (根據身分變換 UI) ---
+# 新增語種控制指令
+lang_instruction = f"【重要指令】不論錄音檔原本是什麼語言，請務必將所有輸出的內容翻譯並撰寫為：「{output_language}」。" if "自動偵測" not in output_language else "【重要指令】請使用與錄音檔相同的語言來輸出內容。"
+
 if role == "👩‍🎓 學生 (生成筆記)":
     st.title("👩‍🎓 學生課堂速記助手")
     st.caption("將上課錄音自動轉換為「高品質複習筆記」與「考前猜題」")
     
-    # 學生專屬 Prompt
-    ai_prompt = """
+    # 學生專屬 Prompt (加入語言指令)
+    ai_prompt = f"""
     你是一位學霸助教。請仔細聆聽這段課堂錄音，幫學生整理出一份結構清晰的 Markdown 複習筆記。
+    
+    {lang_instruction}
+    
     請包含以下結構：
     1. **📖 課程核心摘要** (200字內精華)
     2. **🔑 關鍵名詞解釋** (請用表格呈現：名詞 | 解釋 | 重要度星號)
@@ -113,9 +128,12 @@ else:
     st.title("👨‍🏫 教師備課與教材生成器")
     st.caption("將您的授課錄音自動轉換為「課後大綱」與「隨堂測驗題」")
     
-    # 教師專屬 Prompt
-    ai_prompt = """
+    # 教師專屬 Prompt (加入語言指令)
+    ai_prompt = f"""
     你是一位專業的教學助理。請仔細聆聽這段授課錄音，協助教授產出課後教材。
+    
+    {lang_instruction}
+    
     請包含以下結構：
     1. **📝 課程內容大綱** (適合放在教學平台給學生看的總結)
     2. **🎯 核心教學目標** (這堂課傳達了哪些重要概念)
