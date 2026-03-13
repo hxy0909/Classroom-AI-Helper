@@ -3,6 +3,8 @@ import google.generativeai as genai
 import tempfile
 import os
 import time
+import markdown
+import pdfkit
 
 # --- 1. 設定頁面基礎 ---
 st.set_page_config(
@@ -37,8 +39,8 @@ st.markdown("""
 # --- 2. 帳號登入系統 (新增) ---
 # 預設的測試帳號密碼 (您可以自行新增或修改)
 USERS = {
-    "student": {"password": "123", "role": "👩‍🎓 學生"},
-    "teacher": {"password": "456", "role": "👨‍🏫 教師"}
+    "student": {"password": "123", "role": "👩‍🎓 學生 (生成筆記)"},
+    "teacher": {"password": "456", "role": "👨‍🏫 教師 (生成教材)"}
 }
 
 # 初始化 Session State 來記住登入狀態
@@ -53,7 +55,7 @@ if not st.session_state.logged_in:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        #st.info("📝 測試帳號：\n* 學生請填：`student` / 密碼 `123`\n* 教師請填：`teacher` / 密碼 `456`")
+        st.info("📝 測試帳號：\n* 學生請填：`student` / 密碼 `123`\n* 教師請填：`teacher` / 密碼 `456`")
         username = st.text_input("👤 帳號")
         password = st.text_input("🔑 密碼", type="password")
         if st.button("登入系統", type="primary", use_container_width=True):
@@ -78,16 +80,7 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.session_state.user_role = None
         st.rerun()
-
-    st.divider()
-    
-    # 語言設定 (新增多國語言支援)
-    st.info("🌐 輸出語言設定")
-    output_language = st.selectbox(
-        "請選擇生成的筆記語言 (AI 會自動翻譯)",
-        ["繁體中文", "English", "日本語", "한국어", "Español", "Français", "Deutsch", "簡體中文", "自動偵測 (與錄音相同)"]
-    )
-    
+        
     st.divider()
     
     # API Key 設定
@@ -109,9 +102,48 @@ with st.sidebar:
     ]
     model_name = st.selectbox("選擇模型", model_options)
 
+    st.divider()
     
+    # 語言設定 (新增多國語言支援)
+    st.info("🌐 輸出語言設定")
+    output_language = st.selectbox(
+        "請選擇生成的筆記語言 (AI 會自動翻譯)",
+        ["繁體中文", "English", "日本語", "한국어", "Español", "Français", "Deutsch", "簡體中文", "自動偵測 (與錄音相同)"]
+    )
 
 # --- 3. 定義 AI 呼叫函式 (含防當機機制) ---
+def create_pdf(md_content):
+    """將 Markdown 內容轉換為 PDF 格式"""
+    # 1. 先將 Markdown 轉成 HTML (支援表格解析)
+    html = markdown.markdown(md_content, extensions=['tables'])
+    
+    # 2. 加上 CSS 樣式與 UTF-8 編碼，防止中文亂碼並美化表格
+    html_template = f"""
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body {{ font-family: "Helvetica Neue", Helvetica, Arial, "Microsoft JhengHei", "PingFang TC", sans-serif; line-height: 1.6; padding: 2em; }}
+          h1, h2, h3 {{ color: #333; }}
+          table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+          th, td {{ border: 1px solid #ccc; padding: 10px; text-align: left; }}
+          th {{ background-color: #f8f9fa; font-weight: bold; }}
+          blockquote {{ border-left: 4px solid #ccc; margin: 0; padding-left: 10px; color: #666; }}
+        </style>
+      </head>
+      <body>
+        {html}
+      </body>
+    </html>
+    """
+    
+    # 3. 轉譯為 PDF 位元組資料
+    options = {
+        'encoding': "UTF-8",
+        'enable-local-file-access': None
+    }
+    return pdfkit.from_string(html_template, False, options=options)
+
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
@@ -231,15 +263,35 @@ if audio_data and api_key:
             st.divider()
             st.markdown(final_content)
             
-            # 下載按鈕
-            st.download_button(
-                label="📥 下載檔案 (.md)",
-                data=final_content,
-                file_name=download_filename,
-                mime="text/markdown",
-                use_container_width=True
-            )
+            # --- 雙格式下載按鈕區 ---
+            col1, col2 = st.columns(2)
             
+            with col1:
+                # 下載 Markdown 按鈕
+                st.download_button(
+                    label="📥 下載檔案 (.md)",
+                    data=final_content,
+                    file_name=download_filename,
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+            
+            with col2:
+                # 生成並下載 PDF 按鈕
+                try:
+                    pdf_data = create_pdf(final_content)
+                    pdf_filename = download_filename.replace(".md", ".pdf")
+                    st.download_button(
+                        label="📥 下載檔案 (.pdf)",
+                        data=pdf_data,
+                        file_name=pdf_filename,
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                except Exception as pdf_err:
+                    # 捕捉未安裝系統套件的錯誤，避免網頁當機
+                    st.error(f"⚠️ PDF 生成失敗 (請確認 GitHub 專案中已設定 packages.txt)。")
+                    
             # 清理暫存檔
             os.remove(tmp_path)
             
@@ -249,6 +301,3 @@ if audio_data and api_key:
 
 elif not api_key:
     st.warning("⚠️ 請在左側輸入 API Key 以開始使用")
-
-
-
