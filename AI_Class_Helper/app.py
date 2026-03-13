@@ -53,7 +53,7 @@ if not st.session_state.logged_in:
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.info("📝 測試帳號：\n* 學生請填：`student` / 密碼 `123`\n* 教師請填：`teacher` / 密碼 `456`")
+        #st.info("📝 測試帳號：\n* 學生請填：`student` / 密碼 `123`\n* 教師請填：`teacher` / 密碼 `456`")
         username = st.text_input("👤 帳號")
         password = st.text_input("🔑 密碼", type="password")
         if st.button("登入系統", type="primary", use_container_width=True):
@@ -249,5 +249,6 @@ if audio_data and api_key:
 
 elif not api_key:
     st.warning("⚠️ 請在左側輸入 API Key 以開始使用")
+
 
 
