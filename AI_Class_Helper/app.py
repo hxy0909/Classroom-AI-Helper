@@ -34,14 +34,51 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 側邊欄設定 (包含身分切換) ---
+# --- 2. 帳號登入系統 (新增) ---
+# 預設的測試帳號密碼 (您可以自行新增或修改)
+USERS = {
+    "student": {"password": "123", "role": "👩‍🎓 學生 (生成筆記)"},
+    "teacher": {"password": "456", "role": "👨‍🏫 教師 (生成教材)"}
+}
+
+# 初始化 Session State 來記住登入狀態
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = None
+
+# 如果未登入，顯示登入畫面並阻擋後續程式執行
+if not st.session_state.logged_in:
+    st.title("🔐 AI 課堂速記與教學系統")
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.info("📝 測試帳號：\n* 學生請填：`student` / 密碼 `123`\n* 教師請填：`teacher` / 密碼 `456`")
+        username = st.text_input("👤 帳號")
+        password = st.text_input("🔑 密碼", type="password")
+        if st.button("登入系統", type="primary", use_container_width=True):
+            if username in USERS and USERS[username]["password"] == password:
+                st.session_state.logged_in = True
+                st.session_state.user_role = USERS[username]["role"]
+                st.rerun() # 驗證成功，重新整理網頁進入主系統
+            else:
+                st.error("❌ 帳號或密碼錯誤！")
+    st.stop() # 關鍵：停止執行後續的 UI，直到登入成功
+
+# 取得目前登入者的身分
+role = st.session_state.user_role
+
+# --- 3. 側邊欄設定 (登入後才會顯示) ---
 with st.sidebar:
     st.title("⚙️ 系統設定")
     
-    # 身分選擇器 (最核心的改動)
-    st.markdown("### 👤 選擇您的身分")
-    role = st.radio("您是...", ["👩‍🎓 學生 (生成筆記)", "👨‍🏫 教師 (生成教材)"])
-    
+    # 顯示當前登入身分與登出按鈕
+    st.success(f"目前身分：\n{role}")
+    if st.button("🚪 登出系統", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.user_role = None
+        st.rerun()
+        
     st.divider()
     
     # API Key 設定
