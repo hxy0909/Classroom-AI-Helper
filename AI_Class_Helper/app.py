@@ -59,18 +59,19 @@ with st.sidebar:
         
     st.divider()
     
-    # --- 關鍵修改區：將 API Key 寫死在這裡 ---
-    # 請將下方引號內的文字替換成您真正的 Google API Key
-    api_key = "AIzaSyDEvsevs_WnDv6s-DriSmwTfdn-002c7dM"
-    
-    if api_key != "請在這裡貼上您的_GOOGLE_API_KEY" and api_key.strip() != "":
-        st.success("✅ 已成功載入內建金鑰")
+    # --- 關鍵修改區：使用安全的 Secrets 讀取金鑰 ---
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        st.success("✅ 已自動載入雲端保險箱金鑰")
     else:
-        st.error("❌ 尚未設定內建金鑰，請檢查程式碼")
+        api_key = st.text_input("🔑 Google API Key", type="password")
+        if not api_key:
+            st.warning("⚠️ 尚未設定金鑰，請在 Streamlit 後台設定 Secrets")
 
     st.divider()
     st.info("👇 模型設定")
-    model_options = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    # 移除了會報錯的 gemini-1.5-flash
+    model_options = ["gemini-2.5-flash", "gemini-2.0-flash"]
     model_name = st.selectbox("選擇模型", model_options)
     
     st.divider()
@@ -104,7 +105,6 @@ def create_pdf(md_content):
       <body>{html}</body>
     </html>
     """
-    # 直接生成並回傳 PDF 的位元組資料
     return HTML(string=html_template).write_pdf()
 
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
