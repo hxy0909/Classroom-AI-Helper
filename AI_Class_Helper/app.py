@@ -56,19 +56,15 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.session_state.user_role = None
         st.rerun()
-
-st.info("🌐 輸出語言設定")
-    output_language = st.selectbox(
-        "選擇生成的筆記語言 (AI 會自動翻譯)",
-        ["繁體中文", "English", "日本語", "한국어", "Español", "簡體中文", "自動偵測 (與錄音相同)"]
-    )
-
+        
+    st.divider()
+    
     # --- 關鍵修改區：將 API Key 寫死在這裡 ---
     # 請將下方引號內的文字替換成您真正的 Google API Key
     api_key = "AIzaSyDEvsevs_WnDv6s-DriSmwTfdn-002c7dM"
     
     if api_key != "請在這裡貼上您的_GOOGLE_API_KEY" and api_key.strip() != "":
-        st.success(" ")
+        st.success("✅ 已成功載入內建金鑰")
     else:
         st.error("❌ 尚未設定內建金鑰，請檢查程式碼")
 
@@ -76,8 +72,13 @@ st.info("🌐 輸出語言設定")
     st.info("👇 模型設定")
     model_options = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     model_name = st.selectbox("選擇模型", model_options)
-
     
+    st.divider()
+    st.info("🌐 輸出語言設定")
+    output_language = st.selectbox(
+        "選擇生成的筆記語言 (AI 會自動翻譯)",
+        ["繁體中文", "English", "日本語", "한국어", "Español", "簡體中文", "自動偵測 (與錄音相同)"]
+    )
 
 # --- 4. 定義輔助函式 ---
 def create_pdf(md_content):
