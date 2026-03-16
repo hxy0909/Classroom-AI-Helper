@@ -36,16 +36,18 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. 帳號登入系統 ---
+# --- 2. 帳號登入與狀態管理 ---
 USERS = {
     "student": {"password": "123", "role": "👩‍🎓 學生 (生成筆記)"},
     "teacher": {"password": "456", "role": "👨‍🏫 教師 (生成教材)"}
 }
 
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'user_role' not in st.session_state:
-    st.session_state.user_role = None
+# 初始化系統狀態 (包含新的 AI 聊天紀錄與筆記暫存)
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'user_role' not in st.session_state: st.session_state.user_role = None
+if 'generated_note' not in st.session_state: st.session_state.generated_note = None
+if 'note_filename' not in st.session_state: st.session_state.note_filename = ""
+if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 
 if not st.session_state.logged_in:
     st.title("🔐 AI 課堂速記與教學系統")
@@ -73,6 +75,9 @@ with st.sidebar:
     if st.button("🚪 登出系統", use_container_width=True):
         st.session_state.logged_in = False
         st.session_state.user_role = None
+        # 登出時清空筆記與聊天紀錄
+        st.session_state.generated_note = None
+        st.session_state.chat_history = []
         st.rerun()
         
     st.divider()
@@ -145,43 +150,35 @@ def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
                 raise e
     raise Exception("系統忙碌中，請過幾分鐘再試。")
 
-def process_and_render_audio(file_path_to_analyze, ai_prompt, download_filename):
+def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
+    """將生成的筆記儲存到系統狀態，而非直接渲染"""
     genai.configure(api_key=api_key)
-    final_content = None
     with st.status("🚀 啟動 AI 引擎...", expanded=True) as status_box:
         try:
             status_box.write("📂 讀取檔案中...")
             status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
             final_content = analyze_audio_with_ai(model_name, file_path_to_analyze, ai_prompt, status_box)
+            
+            # 儲存到 Session State
+            st.session_state.generated_note = final_content
+            st.session_state.note_filename = download_filename
+            st.session_state.chat_history = [] # 產生新筆記時，清空對話紀錄
+            
             status_box.update(label="✅ 分析完成！", state="complete", expanded=False)
         except Exception as e:
             status_box.update(label="❌ 發生錯誤", state="error", expanded=True)
             st.error(f"錯誤訊息: {e}")
-
-    if final_content:
-        st.markdown(final_content)
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button("📥 下載筆記 (.md)", data=final_content, file_name=download_filename, mime="text/markdown", use_container_width=True)
-        with col2:
-            try:
-                pdf_data = create_pdf(final_content)
-                st.download_button("📥 下載筆記 (.pdf)", data=pdf_data, file_name=download_filename.replace(".md", ".pdf"), mime="application/pdf", use_container_width=True)
-            except Exception as pdf_err:
-                st.error("⚠️ PDF 生成失敗！")
-                st.code(str(pdf_err))
 
 def analyze_from_buffer(audio_buffer, ai_prompt, download_filename):
     file_ext = f".{audio_buffer.name.split('.')[-1]}" if hasattr(audio_buffer, "name") and audio_buffer.name else ".wav"
     with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
         tmp.write(audio_buffer.getvalue())
         tmp_path = tmp.name
-    process_and_render_audio(tmp_path, ai_prompt, download_filename)
+    generate_and_store_note(tmp_path, ai_prompt, download_filename)
     try: os.remove(tmp_path)
     except: pass
 
 # --- 共用資源 ---
-# 取得所有的共享錄音檔 (過濾掉 JSON 記錄檔)
 shared_files = [f for f in os.listdir(SHARED_DIR) if os.path.isfile(os.path.join(SHARED_DIR, f)) and not f.endswith('.json')]
 lang_instruction = f"【重要指令】不論錄音檔原本是什麼語言，請務必將所有輸出的內容翻譯並撰寫為：「{output_language}」。" if "自動偵測" not in output_language else "【重要指令】請使用與錄音檔相同的語言來輸出內容。"
 
@@ -243,13 +240,11 @@ if "教師" in role:
                 
                 st.divider()
                 if course_comments:
-                    # 顯示歷史留言
                     for idx, c in enumerate(course_comments):
                         avatar = "👨‍🎓" if c['role'] == "student" else "👨‍🏫"
                         with st.chat_message(c['role'], avatar=avatar):
                             st.write(c['content'])
                     
-                    # 老師回覆區
                     st.markdown("<br>", unsafe_allow_html=True)
                     reply_text = st.text_input("💬 回覆學生留言...", key="teacher_reply")
                     if st.button("送出回覆", type="primary"):
@@ -279,7 +274,7 @@ else:
     tab_shared, tab_upload, tab_record = st.tabs(["🎧 老師分享的錄音", "📂 上傳自己的錄音", "🎙️ 網頁即時錄音"])
 
     with tab_shared:
-        st.info("👇 選擇老師發布的課程，生成筆記或在下方留言發問。")
+        st.info("👇 選擇老師發布的課程，生成筆記或在下方留言給老師。")
         if shared_files:
             selected_file = st.selectbox("請選擇要複習的課程", ["-- 請選擇 --"] + shared_files, key="student_select")
             if selected_file != "-- 請選擇 --":
@@ -289,16 +284,15 @@ else:
                 if not api_key:
                     st.warning("請在側邊欄輸入 API Key")
                 elif st.button("🚀 分析此分享錄音", type="primary", use_container_width=True):
-                    process_and_render_audio(shared_file_path, ai_prompt, "Student_Notes.md")
+                    generate_and_store_note(shared_file_path, ai_prompt, "Student_Notes.md")
                 
-                # --- 學生留言區塊 ---
+                # --- 學生留言區塊 (給真人老師) ---
                 st.divider()
-                st.subheader("💬 提問與留言板")
+                st.subheader("👨‍🏫 師生留言板")
                 
                 all_comments = load_comments()
                 course_comments = all_comments.get(selected_file, [])
                 
-                # 顯示歷史留言
                 if course_comments:
                     for c in course_comments:
                         avatar = "👨‍🎓" if c['role'] == "student" else "👨‍🏫"
@@ -307,13 +301,12 @@ else:
                 else:
                     st.caption("還沒有留言，來當第一個發問的人吧！")
                 
-                # 學生發表新留言
                 st.markdown("<br>", unsafe_allow_html=True)
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    new_comment = st.text_input("請輸入您的問題或留言...", label_visibility="collapsed", key="student_comment")
+                    new_comment = st.text_input("向老師發問...", label_visibility="collapsed", key="student_comment")
                 with col2:
-                    if st.button("送出留言", type="primary", use_container_width=True):
+                    if st.button("送出給老師", type="primary", use_container_width=True):
                         if new_comment:
                             course_comments.append({"role": "student", "content": new_comment})
                             all_comments[selected_file] = course_comments
@@ -339,3 +332,74 @@ else:
             st.warning("請在側邊欄輸入 API Key")
         elif st.button("🚀 分析上傳/錄製的語音", type="primary", use_container_width=True):
             analyze_from_buffer(audio_data, ai_prompt, "Student_Notes.md")
+
+# ==========================================
+# 🎯 分析結果與 AI 助教問答區 (全局置底顯示)
+# ==========================================
+if st.session_state.generated_note:
+    st.divider()
+    st.header("📝 分析結果")
+    st.markdown(st.session_state.generated_note)
+    
+    # --- 下載按鈕 ---
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button("📥 下載筆記 (.md)", data=st.session_state.generated_note, file_name=st.session_state.note_filename, mime="text/markdown", use_container_width=True)
+    with col2:
+        try:
+            pdf_data = create_pdf(st.session_state.generated_note)
+            st.download_button("📥 下載筆記 (.pdf)", data=pdf_data, file_name=st.session_state.note_filename.replace(".md", ".pdf"), mime="application/pdf", use_container_width=True)
+        except Exception as pdf_err:
+            st.error("⚠️ PDF 生成失敗！")
+            st.code(str(pdf_err))
+
+    # --- 🤖 AI 助教一對一問答 (僅學生端) ---
+    if "學生" in role:
+        st.divider()
+        st.subheader("🤖 AI 助教一對一問答")
+        st.info("對這份筆記有不懂的地方嗎？直接在這裡問 AI 助教！（AI 將根據筆記內容為您解答）")
+        
+        # 顯示過去的聊天紀錄
+        for msg in st.session_state.chat_history:
+            avatar = "🤖" if msg["role"] == "assistant" else "👨‍🎓"
+            with st.chat_message(msg["role"], avatar=avatar):
+                st.markdown(msg["content"])
+                
+        # 接收學生最新的提問
+        if user_q := st.chat_input("請輸入您的問題，例如：請用更簡單的例子解釋第二點..."):
+            
+            # 1. 顯示並儲存學生的提問
+            st.session_state.chat_history.append({"role": "user", "content": user_q})
+            with st.chat_message("user", avatar="👨‍🎓"):
+                st.markdown(user_q)
+            
+            # 2. AI 思考與回覆
+            with st.chat_message("assistant", avatar="🤖"):
+                message_placeholder = st.empty()
+                message_placeholder.markdown("🧠 思考中...")
+                
+                try:
+                    # 準備給 AI 的超級上下文 (包含整份筆記與對話歷史)
+                    chat_context = f"【課堂筆記內容】\n{st.session_state.generated_note}\n\n【過去的對話紀錄】\n"
+                    for msg in st.session_state.chat_history[:-1]:
+                        role_name = "學生" if msg["role"] == "user" else "AI助教"
+                        chat_context += f"{role_name}: {msg['content']}\n"
+                        
+                    chat_prompt = f"""
+                    你是一位友善、有耐心的 AI 助教。請根據【課堂筆記內容】來回答學生的問題。
+                    如果學生的問題超出了筆記範圍，請運用你的廣泛知識庫進行補充，但要溫柔地提醒學生這不是錄音裡原本提到的內容。
+                    
+                    {chat_context}
+                    
+                    學生最新問題: {user_q}
+                    AI助教回答:
+                    """
+                    
+                    chat_model = genai.GenerativeModel(model_name)
+                    response = chat_model.generate_content(chat_prompt)
+                    
+                    # 顯示並儲存 AI 的回覆
+                    message_placeholder.markdown(response.text)
+                    st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+                except Exception as e:
+                    message_placeholder.error(f"抱歉，AI 助教遇到了一點問題：{e}")
