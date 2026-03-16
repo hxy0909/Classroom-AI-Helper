@@ -240,7 +240,7 @@ if "教師" in role:
                 st.divider()
                 if course_comments:
                     for idx, c in enumerate(course_comments):
-                        avatar = "👨‍🎓" if c['role'] == "student" else "👨‍🏫"
+                        avatar = "🧐" if c['role'] == "student" else "🧑🏻‍🏫"
                         with st.chat_message(c['role'], avatar=avatar):
                             st.write(c['content'])
                     
