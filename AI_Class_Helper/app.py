@@ -59,11 +59,14 @@ with st.sidebar:
         
     st.divider()
     
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["AIzaSyA8NWKc9JaUBv5Vpqu1R2YptpRkXcjVhtQ"]
-        st.success("✅ 已載入自動金鑰")
+    # --- 關鍵修改區：將 API Key 寫死在這裡 ---
+    # 請將下方引號內的文字替換成您真正的 Google API Key
+    api_key = "AIzaSyDEvsevs_WnDv6s-DriSmwTfdn-002c7dM"
+    
+    if api_key != "請在這裡貼上您的_GOOGLE_API_KEY" and api_key.strip() != "":
+        st.success("✅ 已成功載入內建金鑰")
     else:
-        api_key = st.text_input("🔑 Google API Key", type="password")
+        st.error("❌ 尚未設定內建金鑰，請檢查程式碼")
 
     st.divider()
     st.info("👇 模型設定")
