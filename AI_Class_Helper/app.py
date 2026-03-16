@@ -60,7 +60,7 @@ with st.sidebar:
     st.divider()
     
     if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
+        api_key = st.secrets["AIzaSyA8NWKc9JaUBv5Vpqu1R2YptpRkXcjVhtQ"]
         st.success("✅ 已載入自動金鑰")
     else:
         api_key = st.text_input("🔑 Google API Key", type="password")
