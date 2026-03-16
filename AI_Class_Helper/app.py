@@ -4,7 +4,6 @@ import tempfile
 import os
 import time
 import markdown
-import pdfkit
 
 # --- 1. 設定頁面基礎 ---
 st.set_page_config(page_title="AI 課堂速記與教學系統", page_icon="📝", layout="centered")
@@ -80,14 +79,20 @@ with st.sidebar:
 
 # --- 4. 定義輔助函式 ---
 def create_pdf(md_content):
-    """將 Markdown 轉為 PDF"""
+    """將 Markdown 轉為 PDF (使用現代化 WeasyPrint)"""
+    from weasyprint import HTML
+    
     html = markdown.markdown(md_content, extensions=['tables'])
     html_template = f"""
     <html>
       <head>
         <meta charset="UTF-8">
         <style>
-          body {{ font-family: "Helvetica Neue", Helvetica, Arial, "Microsoft JhengHei", sans-serif; line-height: 1.6; padding: 2em; }}
+          body {{ 
+              font-family: "Noto Sans CJK TC", sans-serif; 
+              line-height: 1.6; 
+              padding: 2em; 
+          }}
           table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
           th, td {{ border: 1px solid #ccc; padding: 10px; text-align: left; }}
           th {{ background-color: #f8f9fa; font-weight: bold; }}
@@ -96,25 +101,13 @@ def create_pdf(md_content):
       <body>{html}</body>
     </html>
     """
-    options = {'encoding': "UTF-8", 'enable-local-file-access': ""}
-    
-    try:
-        # 雲端 Linux 主機的預設安裝位置
-        if os.path.exists('/usr/bin/wkhtmltopdf'):
-            config = pdfkit.configuration(wkhtmltopdf='/usr/bin/wkhtmltopdf')
-            return pdfkit.from_string(html_template, False, options=options, configuration=config)
-    except Exception:
-        pass
-        
-    # 若找不到特定路徑，則依賴系統預設環境變數
-    return pdfkit.from_string(html_template, False, options=options)
+    # 直接生成並回傳 PDF 的位元組資料
+    return HTML(string=html_template).write_pdf()
 
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
-    """呼叫 AI 並處理重試機制 (移除了會當機的 spinner)"""
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
     
-    # 直接用 status_box 寫入狀態，不混用 st.spinner
     status_box.write("⏳ 正在上傳至 AI 雲端，請稍候...")
     while file.state.name == "PROCESSING":
         time.sleep(2)
@@ -182,7 +175,6 @@ if audio_data and api_key:
     if st.button("🚀 開始全方位分析", type="primary", use_container_width=True):
         genai.configure(api_key=api_key)
         
-        # 使用安全的 context manager 來管理狀態框，防止 DOM 崩潰
         with st.status("🚀 啟動 AI 引擎...", expanded=True) as status_box:
             try:
                 status_box.write("📂 讀取檔案中...")
@@ -200,7 +192,7 @@ if audio_data and api_key:
             except Exception as e:
                 status_box.update(label="❌ 發生錯誤", state="error", expanded=True)
                 st.error(f"錯誤訊息: {e}")
-                final_content = None # 如果錯誤就中斷
+                final_content = None
                 
         if final_content:
             st.markdown(final_content)
@@ -214,7 +206,7 @@ if audio_data and api_key:
                     pdf_data = create_pdf(final_content)
                     st.download_button("📥 下載筆記 (.pdf)", data=pdf_data, file_name=download_filename.replace(".md", ".pdf"), mime="application/pdf", use_container_width=True)
                 except Exception as pdf_err:
-                    st.error("⚠️ PDF 生成失敗！詳細錯誤：")
+                    st.error("⚠️ PDF 生成失敗！")
                     st.code(str(pdf_err))
                     
             try:
