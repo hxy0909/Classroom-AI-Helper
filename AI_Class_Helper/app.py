@@ -81,10 +81,6 @@ with st.sidebar:
 # --- 4. 定義輔助函式 ---
 def create_pdf(md_content):
     """將 Markdown 轉為 PDF"""
-    import markdown
-    import pdfkit
-    import os
-    
     html = markdown.markdown(md_content, extensions=['tables'])
     html_template = f"""
     <html>
@@ -100,38 +96,43 @@ def create_pdf(md_content):
       <body>{html}</body>
     </html>
     """
-    options = {'encoding': "UTF-8", 'enable-local-file-access': None}
+    options = {'encoding': "UTF-8", 'enable-local-file-access': ""}
     
-    # --- 關鍵修正：強制指定 Linux 雲端主機的執行檔路徑 ---
     try:
-        # Streamlit Cloud 安裝 wkhtmltopdf 後的預設路徑
-        config = pdfkit.configuration(wkhtmltopdf='/usr/bin/wkhtmltopdf')
-        return pdfkit.from_string(html_template, False, options=options, configuration=config)
-    except Exception as e:
-        # 如果找不到，印出錯誤讓我們知道
-        raise Exception(f"找不到 wkhtmltopdf 執行檔。請確認 packages.txt 已放置於 GitHub 專案的最外層目錄。詳細錯誤: {e}")
+        # 雲端 Linux 主機的預設安裝位置
+        if os.path.exists('/usr/bin/wkhtmltopdf'):
+            config = pdfkit.configuration(wkhtmltopdf='/usr/bin/wkhtmltopdf')
+            return pdfkit.from_string(html_template, False, options=options, configuration=config)
+    except Exception:
+        pass
+        
+    # 若找不到特定路徑，則依賴系統預設環境變數
+    return pdfkit.from_string(html_template, False, options=options)
 
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
-    """呼叫 AI 並處理重試機制"""
+    """呼叫 AI 並處理重試機制 (移除了會當機的 spinner)"""
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
     
-    with st.spinner("上傳至 AI 大腦..."):
-        while file.state.name == "PROCESSING":
-            time.sleep(2)
-            file = genai.get_file(file.name)
-        if file.state.name == "FAILED":
-            raise Exception("檔案處理失敗")
+    # 直接用 status_box 寫入狀態，不混用 st.spinner
+    status_box.write("⏳ 正在上傳至 AI 雲端，請稍候...")
+    while file.state.name == "PROCESSING":
+        time.sleep(2)
+        file = genai.get_file(file.name)
+    if file.state.name == "FAILED":
+        raise Exception("檔案處理失敗")
 
     max_retries = 5
     for i in range(max_retries):
         try:
+            if i > 0:
+                status_box.write(f"🔄 第 {i+1} 次嘗試呼叫 AI...")
             response = model.generate_content([file, prompt])
             return response.text
         except Exception as e:
             if "429" in str(e):
                 wait_time = 10 * (i + 1)
-                status_box.write(f"⚠️ Google 伺服器忙碌中。冷卻 {wait_time} 秒後重試...")
+                status_box.write(f"⚠️ Google 伺服器忙碌中。自動冷卻 {wait_time} 秒後重試...")
                 time.sleep(wait_time)
                 continue
             elif "404" in str(e):
@@ -180,20 +181,28 @@ with tab_record:
 if audio_data and api_key:
     if st.button("🚀 開始全方位分析", type="primary", use_container_width=True):
         genai.configure(api_key=api_key)
-        status_box = st.status("🚀 啟動 AI 引擎...", expanded=True)
         
-        try:
-            status_box.write("📂 讀取檔案中...")
-            file_ext = f".{audio_data.name.split('.')[-1]}" if hasattr(audio_data, "name") and audio_data.name else ".wav"
+        # 使用安全的 context manager 來管理狀態框，防止 DOM 崩潰
+        with st.status("🚀 啟動 AI 引擎...", expanded=True) as status_box:
+            try:
+                status_box.write("📂 讀取檔案中...")
+                file_ext = f".{audio_data.name.split('.')[-1]}" if hasattr(audio_data, "name") and audio_data.name else ".wav"
+                    
+                with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                    tmp.write(audio_data.getvalue())
+                    tmp_path = tmp.name
                 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
-                tmp.write(audio_data.getvalue())
-                tmp_path = tmp.name
-            
-            status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
-            final_content = analyze_audio_with_ai(model_name, tmp_path, ai_prompt, status_box)
-            
-            status_box.update(label="✅ 分析完成！", state="complete", expanded=False)
+                status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
+                final_content = analyze_audio_with_ai(model_name, tmp_path, ai_prompt, status_box)
+                
+                status_box.update(label="✅ 分析完成！", state="complete", expanded=False)
+                
+            except Exception as e:
+                status_box.update(label="❌ 發生錯誤", state="error", expanded=True)
+                st.error(f"錯誤訊息: {e}")
+                final_content = None # 如果錯誤就中斷
+                
+        if final_content:
             st.markdown(final_content)
             
             # --- 下載按鈕區 ---
@@ -205,15 +214,13 @@ if audio_data and api_key:
                     pdf_data = create_pdf(final_content)
                     st.download_button("📥 下載筆記 (.pdf)", data=pdf_data, file_name=download_filename.replace(".md", ".pdf"), mime="application/pdf", use_container_width=True)
                 except Exception as pdf_err:
-                    st.error("⚠️ PDF 生成失敗！")
-                    st.code(f"詳細錯誤：\n{str(pdf_err)}")
-                    st.info("👉 提示：如果您剛設定完 packages.txt，請務必執行右下角 Manage app -> Reboot 來重啟伺服器。")
+                    st.error("⚠️ PDF 生成失敗！詳細錯誤：")
+                    st.code(str(pdf_err))
                     
-            os.remove(tmp_path)
-            
-        except Exception as e:
-            status_box.update(label="❌ 發生錯誤", state="error")
-            st.error(f"錯誤訊息: {e}")
+            try:
+                os.remove(tmp_path)
+            except:
+                pass
 
 elif not api_key:
     st.warning("請在左側輸入 API Key")
