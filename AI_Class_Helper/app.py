@@ -81,6 +81,10 @@ with st.sidebar:
 # --- 4. 定義輔助函式 ---
 def create_pdf(md_content):
     """將 Markdown 轉為 PDF"""
+    import markdown
+    import pdfkit
+    import os
+    
     html = markdown.markdown(md_content, extensions=['tables'])
     html_template = f"""
     <html>
@@ -97,7 +101,15 @@ def create_pdf(md_content):
     </html>
     """
     options = {'encoding': "UTF-8", 'enable-local-file-access': None}
-    return pdfkit.from_string(html_template, False, options=options)
+    
+    # --- 關鍵修正：強制指定 Linux 雲端主機的執行檔路徑 ---
+    try:
+        # Streamlit Cloud 安裝 wkhtmltopdf 後的預設路徑
+        config = pdfkit.configuration(wkhtmltopdf='/usr/bin/wkhtmltopdf')
+        return pdfkit.from_string(html_template, False, options=options, configuration=config)
+    except Exception as e:
+        # 如果找不到，印出錯誤讓我們知道
+        raise Exception(f"找不到 wkhtmltopdf 執行檔。請確認 packages.txt 已放置於 GitHub 專案的最外層目錄。詳細錯誤: {e}")
 
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     """呼叫 AI 並處理重試機制"""
