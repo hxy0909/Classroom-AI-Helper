@@ -189,8 +189,8 @@ if "教師" in role:
     {lang_instruction}
     請嚴格遵守以下結構，並務必在第2點和第3點之間插入「---TEACHER_ONLY---」作為系統分隔線：
     1. 課程內容大綱
+        ---TEACHER_ONLY---
     2. 核心教學目標
-    ---TEACHER_ONLY---
     3. 課後隨堂測驗(3題單選含解析)
     4. 學生易錯點提醒
     
