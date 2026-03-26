@@ -187,7 +187,14 @@ if "教師" in role:
     ai_prompt = f"""
     你是一位專業教學助理。請仔細聆聽這段授課錄音，產出課後教材。
     {lang_instruction}
-    結構包含：1. 課程內容大綱 2. 核心教學目標 3. 課後隨堂測驗(3題單選含解析) 4. 學生易錯點提醒。直接輸出 Markdown。
+    請嚴格遵守以下結構，並務必在第2點和第3點之間插入「---TEACHER_ONLY---」作為系統分隔線：
+    1. 課程內容大綱
+    2. 核心教學目標
+    ---TEACHER_ONLY---
+    3. 課後隨堂測驗(3題單選含解析)
+    4. 學生易錯點提醒
+    
+    請直接輸出 Markdown 內容。
     """
     
     tab_upload, tab_record, tab_comments = st.tabs(["📂 上傳錄音產製教材", "🎙️ 網頁錄音產製教材", "💬 學生提問留言板"])
@@ -220,7 +227,8 @@ if "教師" in role:
                 # 可選：預覽講義內容
                 with st.expander("📖 展開預覽此份講義內容"):
                     with open(os.path.join(SHARED_DIR, selected_file), "r", encoding="utf-8") as f:
-                        st.markdown(f.read())
+                        preview_content = f.read().replace("---TEACHER_ONLY---", "\n\n---\n**🔒 以下為教師專屬內容 (學生端不可見)：**\n\n")
+                        st.markdown(preview_content)
                         
                 all_comments = load_comments()
                 course_comments = all_comments.get(selected_file, [])
@@ -304,15 +312,25 @@ else:
 if st.session_state.generated_note:
     st.divider()
     st.header("📝 講義與筆記內容")
-    st.markdown(st.session_state.generated_note)
+    
+    # --- 權限過濾機制：依據身分決定顯示範圍 ---
+    raw_note = st.session_state.generated_note
+    if "學生" in role:
+        # 學生端：過濾掉 ---TEACHER_ONLY--- 之後的隱藏內容 (測驗與易錯點)
+        display_note = raw_note.split("---TEACHER_ONLY---")[0].strip()
+    else:
+        # 教師端：顯示完整內容，並將標記轉換為視覺提示
+        display_note = raw_note.replace("---TEACHER_ONLY---", "\n\n---\n**🔒 以下為教師專屬內容 (課後隨堂測驗 & 易錯提醒，學生端不可見)：**\n\n")
+        
+    st.markdown(display_note)
     
     # --- 下載按鈕 ---
     col1, col2 = st.columns(2)
     with col1:
-        st.download_button("📥 下載 (.md)", data=st.session_state.generated_note, file_name=st.session_state.note_filename, mime="text/markdown", use_container_width=True)
+        st.download_button("📥 下載 (.md)", data=display_note, file_name=st.session_state.note_filename, mime="text/markdown", use_container_width=True)
     with col2:
         try:
-            pdf_data = create_pdf(st.session_state.generated_note)
+            pdf_data = create_pdf(display_note)
             st.download_button("📥 下載 (.pdf)", data=pdf_data, file_name=st.session_state.note_filename.replace(".md", ".pdf"), mime="application/pdf", use_container_width=True)
         except Exception as pdf_err:
             st.error("⚠️ PDF 生成失敗！")
@@ -392,7 +410,8 @@ if st.session_state.generated_note:
                 message_placeholder.markdown("🧠 思考中...")
                 
                 try:
-                    chat_context = f"【課堂筆記內容】\n{st.session_state.generated_note}\n\n【過去的對話紀錄】\n"
+                    # 傳遞給 AI 的上下文必須使用過濾後的 display_note，防止 AI 不小心洩漏考題
+                    chat_context = f"【課堂筆記內容】\n{display_note}\n\n【過去的對話紀錄】\n"
                     for msg in st.session_state.chat_history[:-1]:
                         role_name = "學生" if msg["role"] == "user" else "AI助教"
                         chat_context += f"{role_name}: {msg['content']}\n"
