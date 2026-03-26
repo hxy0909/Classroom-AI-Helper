@@ -189,8 +189,8 @@ if "教師" in role:
     {lang_instruction}
     請嚴格遵守以下結構，並務必在第2點和第3點之間插入「---TEACHER_ONLY---」作為系統分隔線：
     1. 課程內容大綱
-        ---TEACHER_ONLY---
     2. 核心教學目標
+    ---TEACHER_ONLY---
     3. 課後隨堂測驗(3題單選含解析)
     4. 學生易錯點提醒
     
@@ -269,12 +269,13 @@ else:
     結構包含：1. 課程核心摘要 2. 關鍵名詞解釋(表格) 3. 重點觀念詳解 4. 考試重點預測。直接輸出 Markdown。
     """
     
-    tab_shared, tab_upload, tab_record = st.tabs(["📖 老師分享的講義", "📂 上傳自己的錄音", "🎙️ 網頁即時錄音"])
+    # 學生端分頁：新增專屬的「💬 師生留言板」分頁
+    tab_shared, tab_upload, tab_record, tab_comments = st.tabs(["📖 老師分享的講義", "📂 上傳自己的錄音", "🎙️ 網頁即時錄音", "💬 師生留言板"])
+    
+    shared_md_files = [f for f in os.listdir(SHARED_DIR) if f.endswith('.md')]
 
     with tab_shared:
-        st.info("👇 選擇老師發布的講義，直接閱讀、向老師提問，或呼叫 AI 助教。")
-        shared_md_files = [f for f in os.listdir(SHARED_DIR) if f.endswith('.md')]
-        
+        st.info("👇 選擇老師發布的講義直接閱讀，或呼叫 AI 助教為您解答。")
         if shared_md_files:
             selected_file = st.selectbox("請選擇要複習的講義", ["-- 請選擇 --"] + shared_md_files, key="student_select")
             if selected_file != "-- 請選擇 --":
@@ -305,6 +306,38 @@ else:
         if not api_key: st.warning("請在側邊欄輸入 API Key")
         elif st.button("🚀 分析上傳/錄製的語音", type="primary", use_container_width=True):
             analyze_from_buffer(audio_data, ai_prompt, "Student_Notes.md")
+
+    # 學生端專屬的師生留言板分頁 (獨立出來)
+    with tab_comments:
+        st.subheader("💬 師生留言板")
+        if shared_md_files:
+            selected_comment_file = st.selectbox("請選擇要提問或查看回覆的講義", ["-- 請選擇 --"] + shared_md_files, key="student_comment_select")
+            if selected_comment_file != "-- 請選擇 --":
+                all_comments = load_comments()
+                course_comments = all_comments.get(selected_comment_file, [])
+                
+                st.divider()
+                if course_comments:
+                    for c in course_comments:
+                        avatar = "👨‍🎓" if c['role'] == "student" else "👨‍🏫"
+                        with st.chat_message(c['role'], avatar=avatar):
+                            st.write(c['content'])
+                else:
+                    st.info("還沒有留言，有不懂的地方可以直接發問，老師會親自回覆！")
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    new_comment = st.text_input("留言給老師...", key="student_comment_input", label_visibility="collapsed", placeholder="輸入您想問老師的問題...")
+                with col2:
+                    if st.button("送出給老師", type="primary", use_container_width=True):
+                        if new_comment:
+                            course_comments.append({"role": "student", "content": new_comment})
+                            all_comments[selected_comment_file] = course_comments
+                            save_comments(all_comments)
+                            st.rerun()
+        else:
+            st.warning("😴 目前老師還沒有發布任何講義喔！")
 
 # ==========================================
 # 🎯 分析結果、發布區與互動區 (全局置底顯示)
@@ -358,42 +391,14 @@ if st.session_state.generated_note:
                     st.warning("⚠️ 請先輸入標題才能發布！")
 
     # ==========================
-    # 學生區塊：向老師提問 & AI 助教
+    # 學生區塊：AI 助教問答區
     # ==========================
     if "學生" in role:
         
-        # 1. 真人老師留言板 (只有當載入的是「老師分享的講義」時才會出現)
-        if st.session_state.current_shared_file:
-            st.divider()
-            st.subheader("👨‍🏫 師生留言板")
-            st.caption(f"針對講義：{st.session_state.current_shared_file} 向老師提問")
-            
-            all_comments = load_comments()
-            course_comments = all_comments.get(st.session_state.current_shared_file, [])
-            
-            if course_comments:
-                for c in course_comments:
-                    avatar = "👨‍🎓" if c['role'] == "student" else "👨‍🏫"
-                    with st.chat_message(c['role'], avatar=avatar):
-                        st.write(c['content'])
-            else:
-                st.info("還沒有留言，有不懂的地方可以直接發問，老師會親自回覆！")
-            
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                new_comment = st.text_input("留言給老師...", key="student_comment", label_visibility="collapsed", placeholder="輸入您想問老師的問題...")
-            with col2:
-                if st.button("送出給老師", type="primary", use_container_width=True):
-                    if new_comment:
-                        course_comments.append({"role": "student", "content": new_comment})
-                        all_comments[st.session_state.current_shared_file] = course_comments
-                        save_comments(all_comments)
-                        st.rerun()
-
-        # 2. AI 助教一對一問答 (永遠都在最底下陪伴)
+        # 僅保留 AI 助教一對一問答 (永遠都在最底下陪伴)
         st.divider()
         st.subheader("🤖 AI 助教一對一問答")
-        st.info("不想等老師回覆？直接在這裡問 AI 助教！（AI 將根據上方內容為您即時解答）")
+        st.info("對這份筆記有不懂的地方嗎？直接在這裡問 AI 助教！（AI 將根據上方內容為您即時解答）")
         
         for msg in st.session_state.chat_history:
             avatar = "🤖" if msg["role"] == "assistant" else "👨‍🎓"
