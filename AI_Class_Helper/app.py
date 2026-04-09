@@ -31,6 +31,34 @@ st.markdown("""
     <style>
     .stApp { background-color: #F5F7F9; }
     .stButton>button { color: white; background-color: #FF4B4B; border-radius: 20px; height: 3em; width: 100%; }
+    
+    /* 針對「水平排列」的選項 (導覽列) 隱藏圓圈並轉換為按鈕/分頁外觀 */
+    div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child { 
+        display: none; 
+    }
+    div[role="radiogroup"][aria-orientation="horizontal"] { 
+        gap: 12px; 
+    }
+    div[role="radiogroup"][aria-orientation="horizontal"] > label { 
+        padding: 10px 16px; 
+        background-color: #FFFFFF; 
+        border: 1px solid #E0E0E0; 
+        border-radius: 8px; 
+        margin: 0;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {
+        background-color: #F8F9FA;
+    }
+    div[role="radiogroup"][aria-orientation="horizontal"] > label[data-checked="true"] { 
+        background-color: #FF4B4B; 
+        border-color: #FF4B4B; 
+    }
+    div[role="radiogroup"][aria-orientation="horizontal"] > label[data-checked="true"] p { 
+        color: #FFFFFF !important; 
+        font-weight: 600;
+    }
     </style>
     """, unsafe_allow_html=True)
 
