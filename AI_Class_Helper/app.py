@@ -48,6 +48,7 @@ if 'generated_note' not in st.session_state: st.session_state.generated_note = N
 if 'note_filename' not in st.session_state: st.session_state.note_filename = ""
 if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 if 'current_shared_file' not in st.session_state: st.session_state.current_shared_file = None
+if 'active_quiz' not in st.session_state: st.session_state.active_quiz = None
 
 if not st.session_state.logged_in:
     st.title("🔐 AI 課堂速記與教學系統")
@@ -78,6 +79,7 @@ with st.sidebar:
         st.session_state.generated_note = None
         st.session_state.chat_history = []
         st.session_state.current_shared_file = None
+        st.session_state.active_quiz = None
         st.rerun()
         
     st.divider()
@@ -162,6 +164,7 @@ def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
             st.session_state.note_filename = download_filename
             st.session_state.chat_history = []
             st.session_state.current_shared_file = None 
+            st.session_state.active_quiz = None
             
             status_box.update(label="✅ 講義生成完成！請至下方預覽並發布。", state="complete", expanded=False)
         except Exception as e:
@@ -318,6 +321,7 @@ else:
                     st.session_state.note_filename = selected_file
                     st.session_state.current_shared_file = selected_file
                     st.session_state.chat_history = []
+                    st.session_state.active_quiz = None
                     st.rerun()
         else:
             st.warning("😴 目前老師還沒有發布任何講義喔！")
@@ -329,51 +333,66 @@ else:
         if quiz_files:
             selected_quiz = st.selectbox("選擇要挑戰的測驗", ["-- 請選擇 --"] + quiz_files)
             if selected_quiz != "-- 請選擇 --":
-                quiz_path = os.path.join(QUIZ_DIR, selected_quiz)
-                with open(quiz_path, "r", encoding="utf-8") as f:
-                    quiz_data = json.load(f)
+                # --- 新增：防作弊進入機制 ---
+                if st.session_state.active_quiz != selected_quiz:
+                    st.warning("⚠️ 準備好挑戰了嗎？點擊開始後，下方的「課堂講義」將被自動隱藏，以確保測驗公平喔！")
+                    if st.button("🚀 我準備好了，開始測驗！", type="primary", use_container_width=True):
+                        st.session_state.active_quiz = selected_quiz
+                        st.session_state.generated_note = None # 強制隱藏講義
+                        st.rerun()
                 
-                st.info(f"🎯 本次測驗共有 {len(quiz_data)} 題，準備好就開始作答吧！")
-                st.markdown("---")
-                
-                # 使用 st.form 把題目包起來，確保作答完才送出計分
-                with st.form("quiz_form"):
-                    user_answers = {}
-                    for i, q in enumerate(quiz_data):
-                        st.markdown(f"**Q{i+1}: {q['question']}**")
-                        user_answers[i] = st.radio("請選擇：", q['options'], key=f"q_{i}", index=None)
-                        st.markdown("<br>", unsafe_allow_html=True)
-                    
-                    submitted = st.form_submit_button("🚀 交卷看成績！", type="primary", use_container_width=True)
-                    
-                    if submitted:
-                        st.divider()
-                        st.subheader("📊 測驗結果")
-                        score = 0
-                        total = len(quiz_data)
+                # 只有當按下開始按鈕後，才會顯示題目
+                if st.session_state.active_quiz == selected_quiz:
+                    # 允許學生放棄測驗並回到講義
+                    if st.button("🚪 結束測驗 (放棄作答)"):
+                        st.session_state.active_quiz = None
+                        st.rerun()
                         
-                        # 核對答案
+                    quiz_path = os.path.join(QUIZ_DIR, selected_quiz)
+                    with open(quiz_path, "r", encoding="utf-8") as f:
+                        quiz_data = json.load(f)
+                    
+                    st.info(f"🎯 本次測驗共有 {len(quiz_data)} 題，開始作答！")
+                    st.markdown("---")
+                    
+                    # 使用 st.form 把題目包起來，確保作答完才送出計分 (已修復完整迴圈)
+                    with st.form("quiz_form"):
+                        user_answers = {}
                         for i, q in enumerate(quiz_data):
-                            ans = user_answers[i]
-                            if ans == q['answer']:
-                                score += 1
-                                st.success(f"**Q{i+1}: 答對了！✅** (您的答案: {ans})")
+                            st.markdown(f"**Q{i+1}: {q['question']}**")
+                            user_answers[i] = st.radio("請選擇：", q['options'], key=f"q_{i}", index=None)
+                            st.markdown("<br>", unsafe_allow_html=True)
+                        
+                        submitted = st.form_submit_button("🚀 交卷看成績！", type="primary", use_container_width=True)
+                        
+                        if submitted:
+                            st.divider()
+                            st.subheader("📊 測驗結果")
+                            score = 0
+                            total = len(quiz_data)
+                            
+                            # 核對答案
+                            for i, q in enumerate(quiz_data):
+                                ans = user_answers[i]
+                                if ans == q['answer']:
+                                    score += 1
+                                    st.success(f"**Q{i+1}: 答對了！✅** (您的答案: {ans})")
+                                else:
+                                    st.error(f"**Q{i+1}: 答錯了 ❌** (您的答案: {ans}，正確答案: **{q['answer']}**)")
+                                st.caption(f"💡 解析：{q['explanation']}")
+                                st.markdown("---")
+                            
+                            # 計算與顯示總分
+                            final_score = int((score / total) * 100)
+                            st.header(f"🏆 您的總分：{final_score} / 100")
+                            
+                            if final_score >= 80:
+                                st.balloons()
+                                st.success("太棒了！您已經完全掌握了這堂課的精華！🎉")
+                            elif final_score >= 60:
+                                st.info("表現不錯！再複習一下會更好喔！💪")
                             else:
-                                st.error(f"**Q{i+1}: 答錯了 ❌** (您的答案: {ans}，正確答案: **{q['answer']}**)")
-                            st.caption(f"💡 解析：{q['explanation']}")
-                            st.markdown("---")
-                        
-                        # 計算與顯示總分
-                        final_score = int((score / total) * 100)
-                        st.header(f"🏆 您的總分：{final_score} / 100")
-                        
-                        if final_score >= 80:
-                            st.balloons()
-                            st.success("太棒了！您已經完全掌握了這堂課的精華！🎉")
-                        elif final_score >= 60:
-                            st.info("表現不錯！再複習一下會更好喔！💪")
-                        else:
-                            st.warning("要加油囉！建議多聽幾次老師的錄音或再看一次講義！📚")
+                                st.warning("要加油囉！建議多聽幾次老師的錄音或再看一次講義！📚")
         else:
             st.info("老師還沒有開放任何測驗題喔！")
 
@@ -427,7 +446,8 @@ else:
 # ==========================================
 # 🎯 分析結果、發布區與互動區 (全局置底顯示)
 # ==========================================
-if st.session_state.generated_note:
+# 嚴格防作弊機制：如果正在進行測驗，強制隱藏下方所有的講義與 AI 問答區
+if st.session_state.generated_note and not st.session_state.active_quiz:
     st.divider()
     st.header("📝 講義與筆記內容")
     
