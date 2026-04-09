@@ -27,37 +27,47 @@ def save_comments(comments_data):
 # --- 1. 設定頁面基礎 ---
 st.set_page_config(page_title="AI 課堂速記與教學系統", page_icon="📝", layout="centered")
 
+# --- 終極版 CSS 魔法：完美分離導覽列與測驗題 ---
 st.markdown("""
     <style>
     .stApp { background-color: #F5F7F9; }
     .stButton>button { color: white; background-color: #FF4B4B; border-radius: 20px; height: 3em; width: 100%; }
     
-    /* 針對「水平排列」的選項 (導覽列) 隱藏圓圈並轉換為按鈕/分頁外觀 */
-    div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child { 
-        display: none; 
+    /* 1. 隱藏「水平」單選按鈕的圓圈 (!important 強制覆蓋原生樣式) */
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child { 
+        display: none !important; 
     }
-    div[role="radiogroup"][aria-orientation="horizontal"] { 
-        gap: 12px; 
+    
+    /* 2. 將「水平」選項的背景變成按鈕外觀 */
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label { 
+        padding: 10px 20px !important; 
+        background-color: #FFFFFF !important; 
+        border: 1px solid #E0E0E0 !important; 
+        border-radius: 8px !important; 
+        margin-right: 10px !important;
+        margin-bottom: 5px !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
     }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label { 
-        padding: 10px 16px; 
-        background-color: #FFFFFF; 
-        border: 1px solid #E0E0E0; 
-        border-radius: 8px; 
-        margin: 0;
-        cursor: pointer;
-        transition: all 0.2s;
+    
+    /* 3. 懸停時的視覺效果 */
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {
+        background-color: #F8F9FA !important;
+        border-color: #FF4B4B !important;
     }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {
-        background-color: #F8F9FA;
+    
+    /* 4. 選中時的效果 (使用最新 CSS :has 選擇器捕捉內部 radio 的選取狀態) */
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked),
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(div[data-checked="true"]) { 
+        background-color: #FF4B4B !important; 
+        border-color: #FF4B4B !important; 
     }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label[data-checked="true"] { 
-        background-color: #FF4B4B; 
-        border-color: #FF4B4B; 
-    }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label[data-checked="true"] p { 
+    
+    /* 5. 選中時的文字變為白色 */
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) p,
+    div[data-testid="stRadio"] div[role="radiogroup"][aria-orientation="horizontal"] > label:has(div[data-checked="true"]) p { 
         color: #FFFFFF !important; 
-        font-weight: 600;
+        font-weight: 600 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -227,7 +237,6 @@ def generate_interactive_quiz(note_content, title):
     """
     response = model.generate_content(quiz_prompt)
     text = response.text
-    # 嘗試清理可能的 markdown 標記
     match = re.search(r'\[\s*\{.*\}\s*\]', text, re.DOTALL)
     if match:
         text = match.group(0)
@@ -256,7 +265,6 @@ if "教師" in role:
     請直接輸出 Markdown 內容。
     """
     
-    # 使用 radio 按鈕取代 tabs，達成完美的防作弊與介面切換
     teacher_mode = st.radio("功能導覽", ["📂 上傳錄音產製教材", "🎙️ 網頁錄音產製教材", "💬 學生提問留言板"], horizontal=True, label_visibility="collapsed")
     audio_data = None 
 
@@ -276,7 +284,6 @@ if "教師" in role:
         elif st.button("🚀 開始生成教材", type="primary", use_container_width=True):
             analyze_from_buffer(audio_data, ai_prompt, "Teacher_Materials.md")
 
-    # 教師端留言板管理
     elif teacher_mode == "💬 學生提問留言板":
         st.subheader("💬 管理學生提問與留言")
         shared_md_files = [f for f in os.listdir(SHARED_DIR) if f.endswith('.md')]
@@ -328,7 +335,6 @@ else:
     結構包含：1. 課程核心摘要 2. 關鍵名詞解釋(表格) 3. 重點觀念詳解 4. 考試重點預測。直接輸出 Markdown。
     """
     
-    # 使用 radio 按鈕取代 tabs，達成完美的防作弊與介面切換
     student_mode = st.radio("功能導覽", ["📖 老師分享的講義", "🎮 互動測驗", "📂 上傳自己的錄音", "🎙️ 網頁錄音", "💬 師生留言板"], horizontal=True, label_visibility="collapsed")
     
     shared_md_files = [f for f in os.listdir(SHARED_DIR) if f.endswith('.md')]
@@ -350,7 +356,6 @@ else:
         else:
             st.warning("😴 目前老師還沒有發布任何講義喔！")
 
-    # --- 🎓 學生端：Kahoot 互動測驗區塊 ---
     elif student_mode == "🎮 互動測驗":
         st.subheader("🎮 隨堂互動測驗 (Kahoot 模式)")
         quiz_files = [f for f in os.listdir(QUIZ_DIR) if f.endswith('.json')]
@@ -451,13 +456,11 @@ else:
 # ==========================================
 # 🎯 分析結果、發布區與互動區 (全局置底顯示)
 # ==========================================
-# 嚴格防作弊機制：動態判斷是否要顯示講義
 show_global_notes = False
 if st.session_state.generated_note:
     if "教師" in role:
         show_global_notes = True
     elif "學生" in role:
-        # 關鍵：只要學生切換到「互動測驗」，這裡的條件就不成立，整個講義區塊都會直接消失！
         if student_mode != "🎮 互動測驗":
             show_global_notes = True
 
