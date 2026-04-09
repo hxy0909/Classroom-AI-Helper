@@ -31,8 +31,26 @@ st.markdown("""
     <style>
     .stApp { background-color: #F5F7F9; }
     .stButton>button { color: white; background-color: #FF4B4B; border-radius: 20px; height: 3em; width: 100%; }
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #FFFFFF; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
+    /* 隱藏 Radio 的圓圈，將選項轉換為按鈕/分頁標籤外觀 */
+    div[role="radiogroup"] > label > div:first-child { display: none; }
+    div[role="radiogroup"] { flex-wrap: wrap; gap: 10px; }
+    div[role="radiogroup"] > label { 
+        padding: 10px 20px; 
+        background-color: #FFFFFF; 
+        border: 1px solid #ddd; 
+        border-radius: 8px; 
+        margin-right: 0px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    div[role="radiogroup"] > label[data-checked="true"] { 
+        background-color: #FF4B4B; 
+        border-color: #FF4B4B; 
+    }
+    div[role="radiogroup"] > label[data-checked="true"] p { 
+        color: white !important; 
+        font-weight: bold;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -48,7 +66,6 @@ if 'generated_note' not in st.session_state: st.session_state.generated_note = N
 if 'note_filename' not in st.session_state: st.session_state.note_filename = ""
 if 'chat_history' not in st.session_state: st.session_state.chat_history = []
 if 'current_shared_file' not in st.session_state: st.session_state.current_shared_file = None
-if 'active_quiz' not in st.session_state: st.session_state.active_quiz = None
 
 if not st.session_state.logged_in:
     st.title("🔐 AI 課堂速記與教學系統")
@@ -79,7 +96,6 @@ with st.sidebar:
         st.session_state.generated_note = None
         st.session_state.chat_history = []
         st.session_state.current_shared_file = None
-        st.session_state.active_quiz = None
         st.rerun()
         
     st.divider()
@@ -164,7 +180,6 @@ def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
             st.session_state.note_filename = download_filename
             st.session_state.chat_history = []
             st.session_state.current_shared_file = None 
-            st.session_state.active_quiz = None
             
             status_box.update(label="✅ 講義生成完成！請至下方預覽並發布。", state="complete", expanded=False)
         except Exception as e:
@@ -233,14 +248,15 @@ if "教師" in role:
     請直接輸出 Markdown 內容。
     """
     
-    tab_upload, tab_record, tab_comments = st.tabs(["📂 上傳錄音產製教材", "🎙️ 網頁錄音產製教材", "💬 學生提問留言板"])
+    # 使用 radio 按鈕取代 tabs，達成完美的防作弊與介面切換
+    teacher_mode = st.radio("功能導覽", ["📂 上傳錄音產製教材", "🎙️ 網頁錄音產製教材", "💬 學生提問留言板"], horizontal=True, label_visibility="collapsed")
     audio_data = None 
 
-    with tab_upload:
+    if teacher_mode == "📂 上傳錄音產製教材":
         uploaded = st.file_uploader("請上傳您的授課錄音以生成講義", type=['mp3', 'wav', 'm4a', 'aac'])
         if uploaded: audio_data = uploaded; st.audio(audio_data)
 
-    with tab_record:
+    elif teacher_mode == "🎙️ 網頁錄音產製教材":
         st.info("💡 允許麥克風後即可開始錄音。")
         recorded = st.audio_input("開始錄製授課內容")
         if recorded: audio_data = recorded
@@ -253,7 +269,7 @@ if "教師" in role:
             analyze_from_buffer(audio_data, ai_prompt, "Teacher_Materials.md")
 
     # 教師端留言板管理
-    with tab_comments:
+    elif teacher_mode == "💬 學生提問留言板":
         st.subheader("💬 管理學生提問與留言")
         shared_md_files = [f for f in os.listdir(SHARED_DIR) if f.endswith('.md')]
         
@@ -304,12 +320,13 @@ else:
     結構包含：1. 課程核心摘要 2. 關鍵名詞解釋(表格) 3. 重點觀念詳解 4. 考試重點預測。直接輸出 Markdown。
     """
     
-    # 新增學生的 🎮 互動測驗 分頁
-    tab_shared, tab_quiz, tab_upload, tab_record, tab_comments = st.tabs(["📖 老師分享的講義", "🎮 互動測驗", "📂 上傳自己的錄音", "🎙️ 網頁錄音", "💬 師生留言板"])
+    # 使用 radio 按鈕取代 tabs，達成完美的防作弊與介面切換
+    student_mode = st.radio("功能導覽", ["📖 老師分享的講義", "🎮 互動測驗", "📂 上傳自己的錄音", "🎙️ 網頁錄音", "💬 師生留言板"], horizontal=True, label_visibility="collapsed")
     
     shared_md_files = [f for f in os.listdir(SHARED_DIR) if f.endswith('.md')]
+    audio_data = None 
 
-    with tab_shared:
+    if student_mode == "📖 老師分享的講義":
         st.info("👇 選擇老師發布的講義直接閱讀，或呼叫 AI 助教為您解答。")
         if shared_md_files:
             selected_file = st.selectbox("請選擇要複習的講義", ["-- 請選擇 --"] + shared_md_files, key="student_select")
@@ -321,87 +338,67 @@ else:
                     st.session_state.note_filename = selected_file
                     st.session_state.current_shared_file = selected_file
                     st.session_state.chat_history = []
-                    st.session_state.active_quiz = None
                     st.rerun()
         else:
             st.warning("😴 目前老師還沒有發布任何講義喔！")
 
     # --- 🎓 學生端：Kahoot 互動測驗區塊 ---
-    with tab_quiz:
+    elif student_mode == "🎮 互動測驗":
         st.subheader("🎮 隨堂互動測驗 (Kahoot 模式)")
         quiz_files = [f for f in os.listdir(QUIZ_DIR) if f.endswith('.json')]
         if quiz_files:
             selected_quiz = st.selectbox("選擇要挑戰的測驗", ["-- 請選擇 --"] + quiz_files)
             if selected_quiz != "-- 請選擇 --":
-                # --- 新增：防作弊進入機制 ---
-                if st.session_state.active_quiz != selected_quiz:
-                    st.warning("⚠️ 準備好挑戰了嗎？點擊開始後，下方的「課堂講義」將被自動隱藏，以確保測驗公平喔！")
-                    if st.button("🚀 我準備好了，開始測驗！", type="primary", use_container_width=True):
-                        st.session_state.active_quiz = selected_quiz
-                        st.session_state.generated_note = None # 強制隱藏講義
-                        st.rerun()
+                quiz_path = os.path.join(QUIZ_DIR, selected_quiz)
+                with open(quiz_path, "r", encoding="utf-8") as f:
+                    quiz_data = json.load(f)
                 
-                # 只有當按下開始按鈕後，才會顯示題目
-                if st.session_state.active_quiz == selected_quiz:
-                    # 允許學生放棄測驗並回到講義
-                    if st.button("🚪 結束測驗 (放棄作答)"):
-                        st.session_state.active_quiz = None
-                        st.rerun()
+                st.info(f"🎯 本次測驗共有 {len(quiz_data)} 題，開始作答！")
+                st.markdown("---")
+                
+                with st.form("quiz_form"):
+                    user_answers = {}
+                    for i, q in enumerate(quiz_data):
+                        st.markdown(f"**Q{i+1}: {q['question']}**")
+                        user_answers[i] = st.radio("請選擇：", q['options'], key=f"q_{i}", index=None)
+                        st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    submitted = st.form_submit_button("🚀 交卷看成績！", type="primary", use_container_width=True)
+                    
+                    if submitted:
+                        st.divider()
+                        st.subheader("📊 測驗結果")
+                        score = 0
+                        total = len(quiz_data)
                         
-                    quiz_path = os.path.join(QUIZ_DIR, selected_quiz)
-                    with open(quiz_path, "r", encoding="utf-8") as f:
-                        quiz_data = json.load(f)
-                    
-                    st.info(f"🎯 本次測驗共有 {len(quiz_data)} 題，開始作答！")
-                    st.markdown("---")
-                    
-                    # 使用 st.form 把題目包起來，確保作答完才送出計分 (已修復完整迴圈)
-                    with st.form("quiz_form"):
-                        user_answers = {}
                         for i, q in enumerate(quiz_data):
-                            st.markdown(f"**Q{i+1}: {q['question']}**")
-                            user_answers[i] = st.radio("請選擇：", q['options'], key=f"q_{i}", index=None)
-                            st.markdown("<br>", unsafe_allow_html=True)
-                        
-                        submitted = st.form_submit_button("🚀 交卷看成績！", type="primary", use_container_width=True)
-                        
-                        if submitted:
-                            st.divider()
-                            st.subheader("📊 測驗結果")
-                            score = 0
-                            total = len(quiz_data)
-                            
-                            # 核對答案
-                            for i, q in enumerate(quiz_data):
-                                ans = user_answers[i]
-                                if ans == q['answer']:
-                                    score += 1
-                                    st.success(f"**Q{i+1}: 答對了！✅** (您的答案: {ans})")
-                                else:
-                                    st.error(f"**Q{i+1}: 答錯了 ❌** (您的答案: {ans}，正確答案: **{q['answer']}**)")
-                                st.caption(f"💡 解析：{q['explanation']}")
-                                st.markdown("---")
-                            
-                            # 計算與顯示總分
-                            final_score = int((score / total) * 100)
-                            st.header(f"🏆 您的總分：{final_score} / 100")
-                            
-                            if final_score >= 80:
-                                st.balloons()
-                                st.success("太棒了！您已經完全掌握了這堂課的精華！🎉")
-                            elif final_score >= 60:
-                                st.info("表現不錯！再複習一下會更好喔！💪")
+                            ans = user_answers[i]
+                            if ans == q['answer']:
+                                score += 1
+                                st.success(f"**Q{i+1}: 答對了！✅** (您的答案: {ans})")
                             else:
-                                st.warning("要加油囉！建議多聽幾次老師的錄音或再看一次講義！📚")
+                                st.error(f"**Q{i+1}: 答錯了 ❌** (您的答案: {ans}，正確答案: **{q['answer']}**)")
+                            st.caption(f"💡 解析：{q['explanation']}")
+                            st.markdown("---")
+                        
+                        final_score = int((score / total) * 100)
+                        st.header(f"🏆 您的總分：{final_score} / 100")
+                        
+                        if final_score >= 80:
+                            st.balloons()
+                            st.success("太棒了！您已經完全掌握了這堂課的精華！🎉")
+                        elif final_score >= 60:
+                            st.info("表現不錯！再複習一下會更好喔！💪")
+                        else:
+                            st.warning("要加油囉！建議多聽幾次老師的錄音或再看一次講義！📚")
         else:
             st.info("老師還沒有開放任何測驗題喔！")
 
-    audio_data = None 
-    with tab_upload:
+    elif student_mode == "📂 上傳自己的錄音":
         uploaded = st.file_uploader("請上傳您自己錄的音檔", type=['mp3', 'wav', 'm4a', 'aac'])
         if uploaded: audio_data = uploaded; st.audio(audio_data)
 
-    with tab_record:
+    elif student_mode == "🎙️ 網頁錄音":
         st.info("💡 允許麥克風後即可開始錄音。")
         recorded = st.audio_input("開始錄製語音")
         if recorded: audio_data = recorded
@@ -413,7 +410,7 @@ else:
         elif st.button("🚀 分析上傳/錄製的語音", type="primary", use_container_width=True):
             analyze_from_buffer(audio_data, ai_prompt, "Student_Notes.md")
 
-    with tab_comments:
+    elif student_mode == "💬 師生留言板":
         st.subheader("💬 師生留言板")
         if shared_md_files:
             selected_comment_file = st.selectbox("請選擇要提問或查看回覆的講義", ["-- 請選擇 --"] + shared_md_files, key="student_comment_select")
@@ -446,8 +443,17 @@ else:
 # ==========================================
 # 🎯 分析結果、發布區與互動區 (全局置底顯示)
 # ==========================================
-# 嚴格防作弊機制：如果正在進行測驗，強制隱藏下方所有的講義與 AI 問答區
-if st.session_state.generated_note and not st.session_state.active_quiz:
+# 嚴格防作弊機制：動態判斷是否要顯示講義
+show_global_notes = False
+if st.session_state.generated_note:
+    if "教師" in role:
+        show_global_notes = True
+    elif "學生" in role:
+        # 關鍵：只要學生切換到「互動測驗」，這裡的條件就不成立，整個講義區塊都會直接消失！
+        if student_mode != "🎮 互動測驗":
+            show_global_notes = True
+
+if show_global_notes:
     st.divider()
     st.header("📝 講義與筆記內容")
     
@@ -494,19 +500,14 @@ if st.session_state.generated_note and not st.session_state.active_quiz:
         with col_t2:
             if st.button("🎲 發布講義 + 一鍵生成互動測驗", type="primary", use_container_width=True):
                 if share_title:
-                    # 1. 先儲存講義
                     safe_title = share_title.replace("/", "_").replace("\\", "_")
                     md_save_path = os.path.join(SHARED_DIR, f"{safe_title}.md")
                     with open(md_save_path, "w", encoding="utf-8") as f:
                         f.write(st.session_state.generated_note)
                     
-                    # 2. 開始生成測驗
                     with st.status("🎲 正在叫 AI 自動出題 (10題)...", expanded=True) as status_box:
                         try:
-                            # 注意：我們使用 display_note (包含老師解答的完整版本) 來讓 AI 有更多資訊出題
                             quiz_json = generate_interactive_quiz(display_note, safe_title)
-                            
-                            # 3. 儲存題庫 JSON
                             quiz_save_path = os.path.join(QUIZ_DIR, f"{safe_title}.json")
                             with open(quiz_save_path, "w", encoding="utf-8") as f:
                                 json.dump(quiz_json, f, ensure_ascii=False, indent=2)
