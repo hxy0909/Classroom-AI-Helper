@@ -31,27 +31,6 @@ st.markdown("""
     <style>
     .stApp { background-color: #F5F7F9; }
     .stButton>button { color: white; background-color: #FF4B4B; border-radius: 20px; height: 3em; width: 100%; }
-    
-    /* [關鍵修復] 加上 [aria-orientation="horizontal"]，確保這些魔法只對上方「水平排列」的導覽列生效 */
-    div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child { display: none; }
-    div[role="radiogroup"][aria-orientation="horizontal"] { flex-wrap: wrap; gap: 10px; }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label { 
-        padding: 10px 20px; 
-        background-color: #FFFFFF; 
-        border: 1px solid #ddd; 
-        border-radius: 8px; 
-        margin-right: 0px;
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label[data-checked="true"] { 
-        background-color: #FF4B4B; 
-        border-color: #FF4B4B; 
-    }
-    div[role="radiogroup"][aria-orientation="horizontal"] > label[data-checked="true"] p { 
-        color: white !important; 
-        font-weight: bold;
-    }
     </style>
     """, unsafe_allow_html=True)
 
