@@ -6,6 +6,7 @@ import time
 import markdown
 import json
 import re
+from datetime import datetime
 
 # --- 0. 初始化系統資料夾與資料庫 ---
 SHARED_DIR = "shared_notes"
@@ -13,6 +14,7 @@ QUIZ_DIR = "shared_quizzes"
 os.makedirs(SHARED_DIR, exist_ok=True)
 os.makedirs(QUIZ_DIR, exist_ok=True)
 COMMENTS_FILE = os.path.join(SHARED_DIR, "comments.json")
+QUIZ_RESULTS_FILE = os.path.join(QUIZ_DIR, "quiz_results.json") # 新增：成績儲存庫
 
 def load_comments():
     if os.path.exists(COMMENTS_FILE):
@@ -23,6 +25,16 @@ def load_comments():
 def save_comments(comments_data):
     with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
         json.dump(comments_data, f, ensure_ascii=False, indent=2)
+
+def load_quiz_results():
+    if os.path.exists(QUIZ_RESULTS_FILE):
+        with open(QUIZ_RESULTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_quiz_results(results_data):
+    with open(QUIZ_RESULTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(results_data, f, ensure_ascii=False, indent=2)
 
 # --- 1. 設定頁面基礎 ---
 st.set_page_config(page_title="AI 課堂速記與教學系統", page_icon="📝", layout="centered")
@@ -118,7 +130,6 @@ with st.sidebar:
         
     st.divider()
     
-    # 【背景讀取 API Key，隱藏成功提示，讓畫面更乾淨】
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
     else:
@@ -126,10 +137,8 @@ with st.sidebar:
         if not api_key:
             st.warning("⚠️ 尚未設定金鑰，請在 Streamlit 後台設定 Secrets")
 
-    # 【背景固定模型設定，隱藏選項區塊】
     model_name = "gemini-2.5-flash"
     
-    # 【移除藍色區塊 (st.info)，直接保留下拉選單】
     output_language = st.selectbox(
         "🌐 選擇生成的筆記語言",
         ["繁體中文", "English", "日本語", "한국어", "Español", "簡體中文", "自動偵測 (與錄音相同)"]
@@ -156,7 +165,6 @@ def create_pdf(md_content):
     return HTML(string=html_template).write_pdf()
 
 def analyze_audio_with_ai(model_name, file_path, prompt):
-    """移除 status_box 依賴，直接回傳結果"""
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
     
@@ -174,7 +182,6 @@ def analyze_audio_with_ai(model_name, file_path, prompt):
         except Exception as e:
             if "429" in str(e):
                 wait_time = 10 * (i + 1)
-                # 遇到忙碌時，使用 Toast 輕量提示 (出現在畫面右下角)
                 st.toast(f"⚠️ 伺服器忙碌中。冷卻 {wait_time} 秒後重試...", icon="⏳")
                 time.sleep(wait_time)
                 continue
@@ -186,7 +193,6 @@ def analyze_audio_with_ai(model_name, file_path, prompt):
 
 def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
     genai.configure(api_key=api_key)
-    # 使用 st.spinner 取代 st.status，只顯示乾淨的轉圈文字
     with st.spinner("🚀 啟動 AI 引擎，這可能需要一點時間..."):
         try:
             final_content = analyze_audio_with_ai(model_name, file_path_to_analyze, ai_prompt)
@@ -264,7 +270,8 @@ if "教師" in role:
     請直接輸出 Markdown 內容。
     """
     
-    teacher_mode = st.radio("功能導覽", ["📂 上傳錄音產製教材", "🎙️ 網頁錄音產製教材", "💬 學生提問留言板"], horizontal=True, label_visibility="collapsed")
+    # 新增了「📊 學生測驗成績」分頁
+    teacher_mode = st.radio("功能導覽", ["📂 上傳錄音產製教材", "🎙️ 網頁錄音產製教材", "💬 學生提問留言板", "📊 學生測驗成績"], horizontal=True, label_visibility="collapsed")
     audio_data = None 
 
     if teacher_mode == "📂 上傳錄音產製教材":
@@ -321,6 +328,39 @@ if "教師" in role:
         else:
             st.warning("目前還沒有發布任何講義。請先在左側分頁生成並發布。")
 
+    # --- 教師端：查看學生測驗成績 ---
+    elif teacher_mode == "📊 學生測驗成績":
+        st.subheader("📊 班級測驗成績總覽")
+        # 排除成績記錄檔本身
+        quiz_files = [f for f in os.listdir(QUIZ_DIR) if f.endswith('.json') and f != "quiz_results.json"]
+        
+        if quiz_files:
+            selected_quiz = st.selectbox("選擇要查看成績的測驗", ["-- 請選擇 --"] + quiz_files, key="teacher_quiz_select")
+            if selected_quiz != "-- 請選擇 --":
+                all_results = load_quiz_results()
+                quiz_results = all_results.get(selected_quiz, [])
+                
+                st.divider()
+                if quiz_results:
+                    st.success(f"🎉 目前共有 {len(quiz_results)} 位學生完成測驗！")
+                    
+                    # 計算並顯示平均分數
+                    total_score = sum(r['score'] for r in quiz_results)
+                    avg_score = total_score / len(quiz_results)
+                    st.info(f"📈 班級平均分數：{avg_score:.1f} 分")
+                    
+                    # 整理資料並透過 st.table 美觀顯示
+                    formatted_results = [
+                        {"🧑‍🎓 學生姓名/學號": r["name"], "💯 測驗分數": f"{r['score']} 分", "🕒 交卷時間": r["timestamp"]} 
+                        for r in quiz_results
+                    ]
+                    # 反轉陣列，讓最新交卷的學生顯示在最上面
+                    st.table(formatted_results[::-1])
+                else:
+                    st.info("目前還沒有學生完成此測驗喔！等學生交卷後成績會顯示在這裡。")
+        else:
+            st.warning("目前還沒有發布任何互動測驗。")
+
 # ==========================================
 # 👩‍🎓 學生專屬介面
 # ==========================================
@@ -366,7 +406,7 @@ else:
 
     elif student_mode == "🎮 互動測驗":
         st.subheader("🎮 隨堂互動測驗 (Kahoot 模式)")
-        quiz_files = [f for f in os.listdir(QUIZ_DIR) if f.endswith('.json')]
+        quiz_files = [f for f in os.listdir(QUIZ_DIR) if f.endswith('.json') and f != "quiz_results.json"]
         if quiz_files:
             selected_quiz = st.selectbox("選擇要挑戰的測驗", ["-- 請選擇 --"] + quiz_files)
             if selected_quiz != "-- 請選擇 --":
@@ -378,6 +418,11 @@ else:
                 st.markdown("---")
                 
                 with st.form("quiz_form"):
+                    # 學生作答前必須先輸入姓名或學號
+                    st.info("📝 作答前請先填寫基本資料：")
+                    student_name = st.text_input("👤 請輸入您的姓名或學號 (必填)：", placeholder="例如：王小明 或 112001")
+                    st.markdown("---")
+                    
                     user_answers = {}
                     for i, q in enumerate(quiz_data):
                         st.markdown(f"**Q{i+1}: {q['question']}**")
@@ -387,31 +432,49 @@ else:
                     submitted = st.form_submit_button("🚀 交卷看成績！", type="primary", use_container_width=True)
                     
                     if submitted:
-                        st.divider()
-                        st.subheader("📊 測驗結果")
-                        score = 0
-                        total = len(quiz_data)
-                        
-                        for i, q in enumerate(quiz_data):
-                            ans = user_answers[i]
-                            if ans == q['answer']:
-                                score += 1
-                                st.success(f"**Q{i+1}: 答對了！✅** (您的答案: {ans})")
-                            else:
-                                st.error(f"**Q{i+1}: 答錯了 ❌** (您的答案: {ans}，正確答案: **{q['answer']}**)")
-                            st.caption(f"💡 解析：{q['explanation']}")
-                            st.markdown("---")
-                        
-                        final_score = int((score / total) * 100)
-                        st.header(f"🏆 您的總分：{final_score} / 100")
-                        
-                        if final_score >= 80:
-                            st.balloons()
-                            st.success("太棒了！您已經完全掌握了這堂課的精華！🎉")
-                        elif final_score >= 60:
-                            st.info("表現不錯！再複習一下會更好喔！💪")
+                        # 檢查是否有輸入姓名
+                        if not student_name.strip():
+                            st.error("⚠️ 繳交失敗：請先在最上方輸入您的「姓名或學號」才能交卷喔！")
                         else:
-                            st.warning("要加油囉！建議多聽幾次老師的錄音或再看一次講義！📚")
+                            st.divider()
+                            st.subheader("📊 測驗結果")
+                            score = 0
+                            total = len(quiz_data)
+                            
+                            for i, q in enumerate(quiz_data):
+                                ans = user_answers[i]
+                                if ans == q['answer']:
+                                    score += 1
+                                    st.success(f"**Q{i+1}: 答對了！✅** (您的答案: {ans})")
+                                else:
+                                    st.error(f"**Q{i+1}: 答錯了 ❌** (您的答案: {ans}，正確答案: **{q['answer']}**)")
+                                st.caption(f"💡 解析：{q['explanation']}")
+                                st.markdown("---")
+                            
+                            final_score = int((score / total) * 100)
+                            st.header(f"🏆 您的總分：{final_score} / 100")
+                            
+                            if final_score >= 80:
+                                st.balloons()
+                                st.success("太棒了！您已經完全掌握了這堂課的精華！🎉")
+                            elif final_score >= 60:
+                                st.info("表現不錯！再複習一下會更好喔！💪")
+                            else:
+                                st.warning("要加油囉！建議多聽幾次老師的錄音或再看一次講義！📚")
+                            
+                            # --- 紀錄成績並儲存回資料庫 ---
+                            all_results = load_quiz_results()
+                            if selected_quiz not in all_results:
+                                all_results[selected_quiz] = []
+                            
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            all_results[selected_quiz].append({
+                                "name": student_name.strip(),
+                                "score": final_score,
+                                "timestamp": timestamp
+                            })
+                            save_quiz_results(all_results)
+                            st.toast("✅ 成績已自動回傳給老師！", icon="📤")
         else:
             st.info("老師還沒有開放任何測驗題喔！")
 
@@ -524,7 +587,6 @@ if show_global_notes:
                     with open(md_save_path, "w", encoding="utf-8") as f:
                         f.write(st.session_state.generated_note)
                     
-                    # 生成題庫同樣改為沒有下拉選單的 st.spinner
                     with st.spinner("🎲 正在叫 AI 自動出題 (10題)..."):
                         try:
                             quiz_json = generate_interactive_quiz(display_note, safe_title)
