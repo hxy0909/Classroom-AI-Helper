@@ -155,11 +155,10 @@ def create_pdf(md_content):
     """
     return HTML(string=html_template).write_pdf()
 
-def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
+def analyze_audio_with_ai(model_name, file_path, prompt):
+    """移除 status_box 依賴，直接回傳結果"""
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
-    
-    # 隱藏：status_box.write("⏳ 正在上傳至 AI 雲端，請稍候...")
     
     while file.state.name == "PROCESSING":
         time.sleep(2)
@@ -170,14 +169,13 @@ def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     max_retries = 5
     for i in range(max_retries):
         try:
-            # 隱藏：if i > 0: status_box.write(f"🔄 第 {i+1} 次嘗試呼叫 AI...")
             response = model.generate_content([file, prompt])
             return response.text
         except Exception as e:
             if "429" in str(e):
                 wait_time = 10 * (i + 1)
-                # 遇到錯誤時的警告保留，讓使用者知道還在運作
-                status_box.write(f"⚠️ 伺服器忙碌中。冷卻 {wait_time} 秒後重試...")
+                # 遇到忙碌時，使用 Toast 輕量提示 (出現在畫面右下角)
+                st.toast(f"⚠️ 伺服器忙碌中。冷卻 {wait_time} 秒後重試...", icon="⏳")
                 time.sleep(wait_time)
                 continue
             elif "404" in str(e):
@@ -188,24 +186,19 @@ def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
 
 def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
     genai.configure(api_key=api_key)
-    # 讓狀態列的標題更明確一點
-    with st.status("🚀 啟動 AI 引擎，這可能需要一點時間...", expanded=True) as status_box:
+    # 使用 st.spinner 取代 st.status，只顯示乾淨的轉圈文字
+    with st.spinner("🚀 啟動 AI 引擎，這可能需要一點時間..."):
         try:
-            # 隱藏以下兩行詳細進度提示，讓展開的框塊保持乾淨
-            # status_box.write("📂 讀取檔案中...")
-            # status_box.write(f"🧠 使用 {model_name} 進行深度分析 (區分課內外內容中)...")
-            
-            final_content = analyze_audio_with_ai(model_name, file_path_to_analyze, ai_prompt, status_box)
+            final_content = analyze_audio_with_ai(model_name, file_path_to_analyze, ai_prompt)
             
             st.session_state.generated_note = final_content
             st.session_state.note_filename = download_filename
             st.session_state.chat_history = []
             st.session_state.current_shared_file = None 
             
-            status_box.update(label="✅ 講義生成完成！請至下方預覽。", state="complete", expanded=False)
+            st.success("✅ 講義生成完成！請至下方預覽。")
         except Exception as e:
-            status_box.update(label="❌ 發生錯誤", state="error", expanded=True)
-            st.error(f"錯誤訊息: {e}")
+            st.error(f"❌ 發生錯誤: {e}")
 
 def analyze_from_buffer(audio_buffer, ai_prompt, download_filename):
     file_ext = f".{audio_buffer.name.split('.')[-1]}" if hasattr(audio_buffer, "name") and audio_buffer.name else ".wav"
@@ -217,7 +210,6 @@ def analyze_from_buffer(audio_buffer, ai_prompt, download_filename):
     except: pass
 
 def generate_interactive_quiz(note_content, title):
-    """叫 AI 生成 10 題選擇題的 JSON 題庫，並確保不考課外閒聊"""
     model = genai.GenerativeModel(model_name)
     quiz_prompt = f"""
     請根據以下講義內容中的「課內教學重點」，設計 10 題適合學生的「單選題」測驗。
@@ -256,7 +248,6 @@ if "教師" in role:
     st.title("👨‍🏫 教師備課與教材發布中心")
     st.caption("管理您的授課錄音、發布講義、生成隨堂測驗，並回覆學生的提問")
     
-    # 教師端 Prompt：加入課外過濾機制
     ai_prompt = f"""
     你是一位專業教學助理。請仔細聆聽這段授課錄音，產出課後教材。
     【自動區分機制】：請嚴格分辨錄音中的「課內教學重點」與「課外閒聊/延伸補充」，並將其分開整理。
@@ -337,7 +328,6 @@ else:
     st.title("👩‍🎓 學生課堂速記助手")
     st.caption("閱讀講義、向老師提問，或是參加隨堂 Kahoot 挑戰！")
     
-    # 學生端 Prompt：加入課外過濾機制
     ai_prompt = f"""
     你是一位學霸助教。請仔細聆聽這段課堂錄音，幫學生整理出一份結構清晰的 Markdown 複習筆記。
     【自動區分機制】：請幫學生過濾雜訊，明確區分出「考試必考的課內重點」與「老師分享的課外話題」。
@@ -534,18 +524,18 @@ if show_global_notes:
                     with open(md_save_path, "w", encoding="utf-8") as f:
                         f.write(st.session_state.generated_note)
                     
-                    with st.status("🎲 正在叫 AI 自動出題 (10題)...", expanded=True) as status_box:
+                    # 生成題庫同樣改為沒有下拉選單的 st.spinner
+                    with st.spinner("🎲 正在叫 AI 自動出題 (10題)..."):
                         try:
                             quiz_json = generate_interactive_quiz(display_note, safe_title)
                             quiz_save_path = os.path.join(QUIZ_DIR, f"{safe_title}.json")
                             with open(quiz_save_path, "w", encoding="utf-8") as f:
                                 json.dump(quiz_json, f, ensure_ascii=False, indent=2)
                                 
-                            status_box.update(label="✅ 講義與測驗皆已發布成功！", state="complete", expanded=False)
+                            st.success("✅ 講義與測驗皆已發布成功！")
                             st.balloons()
                         except Exception as e:
-                            status_box.update(label="❌ 出題失敗", state="error", expanded=True)
-                            st.error(f"詳細錯誤：{e}\n\n可能是 AI 回傳格式不符，請重新點擊一次按鈕。")
+                            st.error(f"❌ 出題失敗\n\n詳細錯誤：{e}\n\n可能是 AI 回傳格式不符，請重新點擊一次按鈕。")
                 else:
                     st.warning("⚠️ 請先輸入標題才能發布！")
 
