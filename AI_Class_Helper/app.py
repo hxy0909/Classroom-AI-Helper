@@ -118,20 +118,17 @@ with st.sidebar:
         
     st.divider()
     
+    # 【背景讀取 API Key，隱藏成功提示，讓畫面更乾淨】
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
-        st.success("✅ 已自動載入雲端保險箱金鑰")
     else:
         api_key = st.text_input("🔑 Google API Key", type="password")
         if not api_key:
             st.warning("⚠️ 尚未設定金鑰，請在 Streamlit 後台設定 Secrets")
 
-    st.divider()
-    st.info("👇 模型設定")
-    model_options = ["gemini-2.5-flash", "gemini-2.0-flash"]
-    model_name = st.selectbox("選擇模型", model_options)
+    # 【背景固定模型設定，隱藏選項區塊】
+    model_name = "gemini-2.5-flash"
     
-    st.divider()
     st.info("🌐 輸出語言設定")
     output_language = st.selectbox(
         "選擇生成的筆記語言 (AI 會自動翻譯)",
