@@ -129,9 +129,11 @@ with st.sidebar:
     # 【背景固定模型設定，隱藏選項區塊】
     model_name = "gemini-2.5-flash"
     
-    # 【背景固定輸出語言設定，隱藏選項區塊】
-    # 如果您希望預設是不翻譯，可以把 "繁體中文" 改成 "自動偵測 (與錄音相同)"
-    output_language = "繁體中文"
+    # 【移除藍色區塊 (st.info)，直接保留下拉選單】
+    output_language = st.selectbox(
+        "🌐 選擇生成的筆記語言",
+        ["繁體中文", "English", "日本語", "한국어", "Español", "簡體中文", "自動偵測 (與錄音相同)"]
+    )
 
 # --- 4. 定義核心 AI 與處理函式 ---
 def create_pdf(md_content):
