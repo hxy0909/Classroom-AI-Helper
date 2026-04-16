@@ -9,7 +9,7 @@ import re
 
 # --- 0. 初始化系統資料夾與資料庫 ---
 SHARED_DIR = "shared_notes"
-QUIZ_DIR = "shared_quizzes" # 新增：存放測驗題庫的資料夾
+QUIZ_DIR = "shared_quizzes"
 os.makedirs(SHARED_DIR, exist_ok=True)
 os.makedirs(QUIZ_DIR, exist_ok=True)
 COMMENTS_FILE = os.path.join(SHARED_DIR, "comments.json")
@@ -191,7 +191,7 @@ def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
     with st.status("🚀 啟動 AI 引擎...", expanded=True) as status_box:
         try:
             status_box.write("📂 讀取檔案中...")
-            status_box.write(f"🧠 使用 {model_name} 進行深度分析...")
+            status_box.write(f"🧠 使用 {model_name} 進行深度分析 (區分課內外內容中)...")
             final_content = analyze_audio_with_ai(model_name, file_path_to_analyze, ai_prompt, status_box)
             
             st.session_state.generated_note = final_content
@@ -199,7 +199,7 @@ def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
             st.session_state.chat_history = []
             st.session_state.current_shared_file = None 
             
-            status_box.update(label="✅ 講義生成完成！請至下方預覽並發布。", state="complete", expanded=False)
+            status_box.update(label="✅ 講義生成完成！請至下方預覽。", state="complete", expanded=False)
         except Exception as e:
             status_box.update(label="❌ 發生錯誤", state="error", expanded=True)
             st.error(f"錯誤訊息: {e}")
@@ -214,11 +214,12 @@ def analyze_from_buffer(audio_buffer, ai_prompt, download_filename):
     except: pass
 
 def generate_interactive_quiz(note_content, title):
-    """叫 AI 生成 10 題選擇題的 JSON 題庫"""
+    """叫 AI 生成 10 題選擇題的 JSON 題庫，並確保不考課外閒聊"""
     model = genai.GenerativeModel(model_name)
     quiz_prompt = f"""
-    請根據以下講義內容，設計 10 題適合學生的「單選題」測驗。
+    請根據以下講義內容中的「課內教學重點」，設計 10 題適合學生的「單選題」測驗。
     這是一個類似 Kahoot 的互動遊戲，請確保題目有趣、難易適中，且涵蓋核心觀念。
+    注意：請「絕對不要」把「課外延伸與閒聊」的內容拿來出題！
     
     【講義內容】：
     {note_content}
@@ -252,15 +253,19 @@ if "教師" in role:
     st.title("👨‍🏫 教師備課與教材發布中心")
     st.caption("管理您的授課錄音、發布講義、生成隨堂測驗，並回覆學生的提問")
     
+    # 教師端 Prompt：加入課外過濾機制
     ai_prompt = f"""
     你是一位專業教學助理。請仔細聆聽這段授課錄音，產出課後教材。
+    【自動區分機制】：請嚴格分辨錄音中的「課內教學重點」與「課外閒聊/延伸補充」，並將其分開整理。
     {lang_instruction}
-    請嚴格遵守以下結構，並務必在第2點和第3點之間插入「---TEACHER_ONLY---」作為系統分隔線：
-    1. 課程內容大綱
-    2. 核心教學目標
+    
+    請嚴格遵守以下結構，並務必在第3點和第4點之間插入「---TEACHER_ONLY---」作為系統分隔線：
+    1. 📚 課程內容大綱 (僅限課內核心教學內容)
+    2. 🌍 課外話題與閒聊紀錄 (請摘要老師分享的課外故事、時事補充、笑話或與主課程無關的閒聊，若無則寫「無特別課外延伸」)
+    3. 🎯 核心教學目標
     ---TEACHER_ONLY---
-    3. 課後隨堂測驗(3題單選含解析)
-    4. 學生易錯點提醒
+    4. 📝 課後隨堂測驗 (3題單選含解析，請僅針對課內重點出題)
+    5. 💡 學生易錯點提醒
     
     請直接輸出 Markdown 內容。
     """
@@ -329,10 +334,20 @@ else:
     st.title("👩‍🎓 學生課堂速記助手")
     st.caption("閱讀講義、向老師提問，或是參加隨堂 Kahoot 挑戰！")
     
+    # 學生端 Prompt：加入課外過濾機制
     ai_prompt = f"""
     你是一位學霸助教。請仔細聆聽這段課堂錄音，幫學生整理出一份結構清晰的 Markdown 複習筆記。
+    【自動區分機制】：請幫學生過濾雜訊，明確區分出「考試必考的課內重點」與「老師分享的課外話題」。
     {lang_instruction}
-    結構包含：1. 課程核心摘要 2. 關鍵名詞解釋(表格) 3. 重點觀念詳解 4. 考試重點預測。直接輸出 Markdown。
+    
+    結構請嚴格包含以下 5 點：
+    1. 📖 課程核心摘要 (摘要本次課堂重點)
+    2. 🔑 關鍵名詞解釋 (請用表格呈現：名詞 | 解釋)
+    3. 💡 重點觀念詳解 (針對課內核心知識進行條列式說明)
+    4. 🌍 課外補充與趣事 (請摘要老師在錄音中提到的課外故事、生活經驗分享、時事或非考試範圍的閒聊，若無則寫「無特別課外延伸」)
+    5. 🎯 考試重點預測
+    
+    請直接輸出 Markdown 內容。
     """
     
     student_mode = st.radio("功能導覽", ["📖 老師分享的講義", "🎮 互動測驗", "📂 上傳自己的錄音", "🎙️ 網頁錄音", "💬 師生留言板"], horizontal=True, label_visibility="collapsed")
