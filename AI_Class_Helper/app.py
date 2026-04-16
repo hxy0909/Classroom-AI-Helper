@@ -158,7 +158,9 @@ def create_pdf(md_content):
 def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     model = genai.GenerativeModel(model_name)
     file = genai.upload_file(file_path)
-    status_box.write("⏳ 正在上傳至 AI 雲端，請稍候...")
+    
+    # 隱藏：status_box.write("⏳ 正在上傳至 AI 雲端，請稍候...")
+    
     while file.state.name == "PROCESSING":
         time.sleep(2)
         file = genai.get_file(file.name)
@@ -168,12 +170,13 @@ def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
     max_retries = 5
     for i in range(max_retries):
         try:
-            if i > 0: status_box.write(f"🔄 第 {i+1} 次嘗試呼叫 AI...")
+            # 隱藏：if i > 0: status_box.write(f"🔄 第 {i+1} 次嘗試呼叫 AI...")
             response = model.generate_content([file, prompt])
             return response.text
         except Exception as e:
             if "429" in str(e):
                 wait_time = 10 * (i + 1)
+                # 遇到錯誤時的警告保留，讓使用者知道還在運作
                 status_box.write(f"⚠️ 伺服器忙碌中。冷卻 {wait_time} 秒後重試...")
                 time.sleep(wait_time)
                 continue
@@ -185,10 +188,13 @@ def analyze_audio_with_ai(model_name, file_path, prompt, status_box):
 
 def generate_and_store_note(file_path_to_analyze, ai_prompt, download_filename):
     genai.configure(api_key=api_key)
-    with st.status("🚀 啟動 AI 引擎...", expanded=True) as status_box:
+    # 讓狀態列的標題更明確一點
+    with st.status("🚀 啟動 AI 引擎，這可能需要一點時間...", expanded=True) as status_box:
         try:
-            status_box.write("📂 讀取檔案中...")
-            status_box.write(f"🧠 使用 {model_name} 進行深度分析 (區分課內外內容中)...")
+            # 隱藏以下兩行詳細進度提示，讓展開的框塊保持乾淨
+            # status_box.write("📂 讀取檔案中...")
+            # status_box.write(f"🧠 使用 {model_name} 進行深度分析 (區分課內外內容中)...")
+            
             final_content = analyze_audio_with_ai(model_name, file_path_to_analyze, ai_prompt, status_box)
             
             st.session_state.generated_note = final_content
