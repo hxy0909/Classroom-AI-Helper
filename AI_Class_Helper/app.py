@@ -405,7 +405,7 @@ else:
             st.warning("😴 目前老師還沒有發布任何講義喔！")
 
     elif student_mode == "🎮 互動測驗":
-        st.subheader("🎮 隨堂互動測驗 (Kahoot 模式)")
+        st.subheader("🎮 隨堂互動測驗")
         quiz_files = [f for f in os.listdir(QUIZ_DIR) if f.endswith('.json') and f != "quiz_results.json"]
         if quiz_files:
             selected_quiz = st.selectbox("選擇要挑戰的測驗", ["-- 請選擇 --"] + quiz_files)
